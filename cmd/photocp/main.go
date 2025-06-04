@@ -7,15 +7,24 @@ import (
 	"os"
 	"path/filepath"
 	"time" // time.Time is used for photoDate variable type and other time operations
+
+	"github.com/user/photo-sorter/pkg"
 )
 
 // FileInfo holds path, resolution and hash for a file.
+// This FileInfo is specific to main's processing logic before deciding to copy.
+// The pkg.FileInfo might be different or used internally by pkg functions.
+// For now, keeping this local, assuming it's distinct or will be reconciled
+// if pkg.GenerateReport or other functions expect pkg.FileInfo.
 type FileInfo struct {
 	Path   string
 	Width  int
 	Height int
 	Hash   string
 }
+
+// DuplicateInfo is defined in the pkg package (specifically in pkg/reporter.go).
+// main.go will use pkg.DuplicateInfo.
 
 func main() {
 	// --- Command-line flags ---
@@ -54,14 +63,14 @@ func main() {
 	var filesToCopyCount int // Number of files deemed unique or better resolution
 
 	// Store FileInfo of files that are candidates for copying (keyed by hash)
-	candidateFilesByHash := make(map[string]FileInfo)
-	var duplicateReportEntries []DuplicateInfo
+	candidateFilesByHash := make(map[string]FileInfo) // Uses local FileInfo
+	var duplicateReportEntries []pkg.DuplicateInfo    // Uses pkg.DuplicateInfo
 
 	// --- Scanning ---
 	fmt.Printf("Scanning source directory: %s\n", sourceDir)
-	imageFiles, err := ScanSourceDirectory(sourceDir)
+	imageFiles, err := pkg.ScanSourceDirectory(sourceDir)
 	if err != nil {
-		// Log non-fatal error from ScanSourceDirectory if it's just about unreadable files,
+		// Log non-fatal error from pkg.ScanSourceDirectory if it's just about unreadable files,
 		// but Fatal if the directory itself is bad (already handled by Stat above mostly)
 		log.Printf("Warning during scanning source directory '%s': %v. Attempting to continue with any found files.\n", sourceDir, err)
 		if imageFiles == nil { // If the error was critical and no files could be read
@@ -71,7 +80,9 @@ func main() {
 
 	if len(imageFiles) == 0 {
 		fmt.Println("No image files found in source directory.")
-		if genErr := GenerateReport(reportFilePath, duplicateReportEntries, copiedFilesCounter, processedFilesCounter, filesToCopyCount); genErr != nil {
+		// Assuming GenerateReport expects the local DuplicateInfo type for now.
+		// This will be confirmed/fixed when we check pkg/reporter.go's GenerateReport signature.
+		if genErr := pkg.GenerateReport(reportFilePath, duplicateReportEntries, copiedFilesCounter, processedFilesCounter, filesToCopyCount); genErr != nil {
 			log.Fatalf("Failed to generate final report: %v", genErr)
 		}
 		return
@@ -84,14 +95,14 @@ func main() {
 	for _, currentFilePath := range imageFiles {
 		fmt.Printf("\nProcessing: %s\n", currentFilePath)
 
-		currentFileHash, err := CalculateFileHash(currentFilePath)
+		currentFileHash, err := pkg.CalculateFileHash(currentFilePath)
 		if err != nil {
 			log.Printf("  - Error calculating hash for %s: %v. Skipping.\n", currentFilePath, err)
 			continue
 		}
 		fmt.Printf("  - Hash: %s\n", currentFileHash)
 
-		currentWidth, currentHeight, errRes := GetImageResolution(currentFilePath)
+		currentWidth, currentHeight, errRes := pkg.GetImageResolution(currentFilePath)
 		if errRes != nil {
 			log.Printf("  - Warning: Could not get resolution for %s: %v. Resolution comparison will be skipped.\n", currentFilePath, errRes)
 			currentWidth, currentHeight = 0, 0 // Ensure zero values if resolution failed
@@ -99,7 +110,7 @@ func main() {
 			fmt.Printf("  - Resolution: %dx%d\n", currentWidth, currentHeight)
 		}
 
-		currentFileInfo := FileInfo{
+		currentFileInfo := FileInfo{ // Uses local FileInfo
 			Path:   currentFilePath,
 			Width:  currentWidth,
 			Height: currentHeight,
@@ -126,7 +137,7 @@ func main() {
 						currentFileInfo.Path, currentFileInfo.Width, currentFileInfo.Height,
 						existingFileInfo.Path, existingFileInfo.Width, existingFileInfo.Height)
 					reason = fmt.Sprintf("Higher resolution than previously kept file %s (%dx%d vs %dx%d)",
-										existingFileInfo.Path, currentFileInfo.Width, currentFileInfo.Height, existingFileInfo.Width, existingFileInfo.Height)
+						existingFileInfo.Path, currentFileInfo.Width, currentFileInfo.Height, existingFileInfo.Width, existingFileInfo.Height)
 					keptFileInfo = currentFileInfo
 					discardedFileInfo = existingFileInfo
 					candidateFilesByHash[currentFileHash] = currentFileInfo
@@ -142,7 +153,7 @@ func main() {
 				processThisFile = false
 			}
 
-			duplicateReportEntries = append(duplicateReportEntries, DuplicateInfo{
+			duplicateReportEntries = append(duplicateReportEntries, pkg.DuplicateInfo{
 				KeptFile:      keptFileInfo.Path,
 				DiscardedFile: discardedFileInfo.Path,
 				Reason:        reason,
@@ -164,7 +175,7 @@ func main() {
 			var photoDate time.Time
 			var dateSource string
 
-			exifDate, err := GetPhotoCreationDate(currentFilePath)
+			exifDate, err := pkg.GetPhotoCreationDate(currentFilePath)
 			if err == nil {
 				photoDate = exifDate
 				dateSource = "EXIF"
@@ -182,7 +193,7 @@ func main() {
 				fmt.Printf("  - Using fallback date (%s): %s\n", dateSource, photoDate.Format("2006-01-02"))
 			}
 
-			targetDayDir, err := CreateTargetDirectory(targetBaseDir, photoDate)
+			targetDayDir, err := pkg.CreateTargetDirectory(targetBaseDir, photoDate)
 			if err != nil {
 				log.Printf("  - Error creating target directory for %s (date: %s, source: %s): %v. Skipping copy.\n",
 					currentFilePath, photoDate.Format("2006-01-02"), dateSource, err)
@@ -193,7 +204,7 @@ func main() {
 			destPath := filepath.Join(targetDayDir, filepath.Base(currentFilePath))
 			fmt.Printf("  - Preparing to copy to: %s\n", destPath)
 
-			if err := CopyFile(currentFilePath, destPath); err != nil {
+			if err := pkg.CopyFile(currentFilePath, destPath); err != nil {
 				log.Printf("  - Error copying file %s to %s: %v.\n", currentFilePath, destPath, err)
 				filesToCopyCount--
 			} else {
@@ -204,7 +215,8 @@ func main() {
 	}
 
 	fmt.Println("\n--- Photo Sorting Process Completed ---")
-	if err := GenerateReport(reportFilePath, duplicateReportEntries, copiedFilesCounter, processedFilesCounter, filesToCopyCount); err != nil {
+	// Assuming GenerateReport expects the local DuplicateInfo type.
+	if err := pkg.GenerateReport(reportFilePath, duplicateReportEntries, copiedFilesCounter, processedFilesCounter, filesToCopyCount); err != nil {
 		log.Fatalf("Failed to generate final report: %v", err)
 	}
 }

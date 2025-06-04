@@ -1,10 +1,12 @@
-package main
+package pkg_test
 
 import (
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/user/photo-sorter/pkg"
 )
 
 func TestGenerateReport(t *testing.T) {
@@ -15,8 +17,7 @@ func TestGenerateReport(t *testing.T) {
 	invalidReportDir := "/proc/cannot_write_here" // Directory where file creation should fail
 	invalidReportFilePath := filepath.Join(invalidReportDir, "report_invalid.txt")
 
-
-	duplicateEntries := []DuplicateInfo{
+	duplicateEntries := []pkg.DuplicateInfo{
 		{KeptFile: "path/to/kept1.jpg", DiscardedFile: "path/to/discarded1.jpg", Reason: "Higher resolution"},
 		{KeptFile: "path/to/kept2.png", DiscardedFile: "path/to/discarded2.png", Reason: "Duplicate content"},
 	}
@@ -24,7 +25,7 @@ func TestGenerateReport(t *testing.T) {
 	tests := []struct {
 		name                string
 		reportPath          string
-		duplicates          []DuplicateInfo
+		duplicates          []pkg.DuplicateInfo
 		copiedFilesCount    int
 		processedFilesCount int
 		filesToCopyCount    int
@@ -55,7 +56,7 @@ func TestGenerateReport(t *testing.T) {
 		{
 			name:                "report with no duplicates",
 			reportPath:          reportFilePathNoDuplicates,
-			duplicates:          []DuplicateInfo{},
+			duplicates:          []pkg.DuplicateInfo{},
 			copiedFilesCount:    8,
 			processedFilesCount: 8,
 			filesToCopyCount:    8,
@@ -70,7 +71,7 @@ func TestGenerateReport(t *testing.T) {
 		{
 			name:                "invalid report path (unwritable)",
 			reportPath:          invalidReportFilePath,
-			duplicates:          []DuplicateInfo{},
+			duplicates:          []pkg.DuplicateInfo{},
 			copiedFilesCount:    0,
 			processedFilesCount: 0,
 			filesToCopyCount:    0,
@@ -81,16 +82,16 @@ func TestGenerateReport(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := GenerateReport(tt.reportPath, tt.duplicates, tt.copiedFilesCount, tt.processedFilesCount, tt.filesToCopyCount)
+			err := pkg.GenerateReport(tt.reportPath, tt.duplicates, tt.copiedFilesCount, tt.processedFilesCount, tt.filesToCopyCount)
 
 			if (err != nil) != tt.expectErr {
-				t.Errorf("GenerateReport() error = %v, expectErr %v", err, tt.expectErr)
+				t.Errorf("pkg.GenerateReport() error = %v, expectErr %v", err, tt.expectErr)
 				return
 			}
 
 			if !tt.expectErr {
 				if _, statErr := os.Stat(tt.reportPath); os.IsNotExist(statErr) {
-					t.Fatalf("GenerateReport() did not create report file %s", tt.reportPath)
+					t.Fatalf("pkg.GenerateReport() did not create report file %s", tt.reportPath)
 				}
 				content, readErr := os.ReadFile(tt.reportPath)
 				if readErr != nil {
@@ -99,7 +100,7 @@ func TestGenerateReport(t *testing.T) {
 				reportContent := string(content)
 				for _, sub := range tt.expectedSubstrings {
 					if !strings.Contains(reportContent, sub) {
-						t.Errorf("GenerateReport() report content missing substring '%s'.\nFull report:\n%s", sub, reportContent)
+						t.Errorf("pkg.GenerateReport() report content missing substring '%s'.\nFull report:\n%s", sub, reportContent)
 					}
 				}
 			}

@@ -1,6 +1,7 @@
-package main
+package pkg_test
 
 import (
+	"github.com/user/photo-sorter/pkg"
 	"image"
 	"image/color"
 	"image/png"
@@ -32,38 +33,38 @@ func TestCalculateFileHash(t *testing.T) {
 
 	nonExistentFilePath := filepath.Join(tmpDir, "non_existent_file.txt")
 
-	hash1, err1 := CalculateFileHash(file1Path)
+	hash1, err1 := pkg.CalculateFileHash(file1Path)
 	if err1 != nil {
-		t.Fatalf("CalculateFileHash(file1Path) error: %v", err1)
+		t.Fatalf("pkg.CalculateFileHash(file1Path) error: %v", err1)
 	}
 
-	hash1Again, err1Again := CalculateFileHash(file1Path)
+	hash1Again, err1Again := pkg.CalculateFileHash(file1Path)
 	if err1Again != nil {
-		t.Fatalf("CalculateFileHash(file1Path) again error: %v", err1Again)
+		t.Fatalf("pkg.CalculateFileHash(file1Path) again error: %v", err1Again)
 	}
 	if hash1 != hash1Again {
-		t.Errorf("CalculateFileHash(file1Path) returned different hashes on subsequent calls: %s vs %s", hash1, hash1Again)
+		t.Errorf("pkg.CalculateFileHash(file1Path) returned different hashes on subsequent calls: %s vs %s", hash1, hash1Again)
 	}
 
-	hash2, err2 := CalculateFileHash(file2Path)
+	hash2, err2 := pkg.CalculateFileHash(file2Path)
 	if err2 != nil {
-		t.Fatalf("CalculateFileHash(file2Path) error: %v", err2)
+		t.Fatalf("pkg.CalculateFileHash(file2Path) error: %v", err2)
 	}
 	if hash1 != hash2 {
 		t.Errorf("Expected identical hashes for identical files, got %s and %s", hash1, hash2)
 	}
 
-	hash3, err3 := CalculateFileHash(file3Path)
+	hash3, err3 := pkg.CalculateFileHash(file3Path)
 	if err3 != nil {
-		t.Fatalf("CalculateFileHash(file3Path) error: %v", err3)
+		t.Fatalf("pkg.CalculateFileHash(file3Path) error: %v", err3)
 	}
 	if hash1 == hash3 {
 		t.Errorf("Expected different hashes for different files, got %s for both", hash1)
 	}
 
-	_, errNonExistent := CalculateFileHash(nonExistentFilePath)
+	_, errNonExistent := pkg.CalculateFileHash(nonExistentFilePath)
 	if errNonExistent == nil {
-		t.Errorf("CalculateFileHash(nonExistentFilePath) expected error, got nil")
+		t.Errorf("pkg.CalculateFileHash(nonExistentFilePath) expected error, got nil")
 	}
 }
 
@@ -139,15 +140,15 @@ func TestGetImageResolution(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			width, height, err := GetImageResolution(tt.filePath)
+			width, height, err := pkg.GetImageResolution(tt.filePath)
 
 			if (err != nil) != tt.expectErr {
-				t.Errorf("GetImageResolution() error = %v, expectErr %v", err, tt.expectErr)
+				t.Errorf("pkg.GetImageResolution() error = %v, expectErr %v", err, tt.expectErr)
 				return
 			}
 			if !tt.expectErr {
 				if width != tt.expectedWidth || height != tt.expectedHeight {
-					t.Errorf("GetImageResolution() got_width = %v, got_height = %v, want_width = %v, want_height = %v",
+					t.Errorf("pkg.GetImageResolution() got_width = %v, got_height = %v, want_width = %v, want_height = %v",
 						width, height, tt.expectedWidth, tt.expectedHeight)
 				}
 			}

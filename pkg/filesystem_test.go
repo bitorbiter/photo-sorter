@@ -1,7 +1,8 @@
-package main
+package pkg_test
 
 import (
 	"errors" // Added for errors.Is
+	"github.com/user/photo-sorter/pkg"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -39,10 +40,10 @@ func TestScanSourceDirectory(t *testing.T) {
 		{
 			name: "valid directory with images and non-images",
 			structure: map[string][]byte{
-				"img1.jpg":         []byte("fake jpg"),
-				"img2.png":         []byte("fake png"),
-				"doc.txt":          []byte("text file"),
-				"subDir/img3.jpeg": []byte("fake jpeg"),
+				"img1.jpg":           []byte("fake jpg"),
+				"img2.png":           []byte("fake png"),
+				"doc.txt":            []byte("text file"),
+				"subDir/img3.jpeg":   []byte("fake jpeg"),
 				"subDir/another.doc": []byte("another text"),
 				"subDir/emptyDir":    nil, // An empty subdirectory
 			},
@@ -78,7 +79,7 @@ func TestScanSourceDirectory(t *testing.T) {
 		{
 			name: "directory with only empty subdirectories",
 			structure: map[string][]byte{
-				"empty1":         nil,
+				"empty1":        nil,
 				"empty2/empty3": nil,
 			},
 			sourceDir:     ".",
@@ -101,11 +102,10 @@ func TestScanSourceDirectory(t *testing.T) {
 				}
 			}
 
-
-			files, err := ScanSourceDirectory(scanDir)
+			files, err := pkg.ScanSourceDirectory(scanDir)
 
 			if (err != nil) != tt.expectedErr {
-				t.Errorf("ScanSourceDirectory() error = %v, expectedErr %v", err, tt.expectedErr)
+				t.Errorf("pkg.ScanSourceDirectory() error = %v, expectedErr %v", err, tt.expectedErr)
 				return
 			}
 
@@ -121,9 +121,8 @@ func TestScanSourceDirectory(t *testing.T) {
 			// files slice from ScanSourceDirectory might be nil or empty, sort handles nil fine.
 			sort.Strings(files)
 
-
 			if !reflect.DeepEqual(files, normalizedExpectedFiles) {
-				t.Errorf("ScanSourceDirectory() files = %v, expected %v", files, normalizedExpectedFiles)
+				t.Errorf("pkg.ScanSourceDirectory() files = %v, expected %v", files, normalizedExpectedFiles)
 			}
 		})
 	}
@@ -162,17 +161,17 @@ func TestCreateTargetDirectory(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			expectedFullPath := filepath.Join(baseTargetDir, tt.expectedDir)
 
-			createdPath, err := CreateTargetDirectory(baseTargetDir, tt.photoDate)
+			createdPath, err := pkg.CreateTargetDirectory(baseTargetDir, tt.photoDate)
 			if (err != nil) != tt.expectedErr {
-				t.Errorf("CreateTargetDirectory() error = %v, wantErr %v", err, tt.expectedErr)
+				t.Errorf("pkg.CreateTargetDirectory() error = %v, wantErr %v", err, tt.expectedErr)
 				return
 			}
 			if err == nil {
 				if createdPath != expectedFullPath {
-					t.Errorf("CreateTargetDirectory() path = %s, want %s", createdPath, expectedFullPath)
+					t.Errorf("pkg.CreateTargetDirectory() path = %s, want %s", createdPath, expectedFullPath)
 				}
 				if _, statErr := os.Stat(expectedFullPath); os.IsNotExist(statErr) {
-					t.Errorf("CreateTargetDirectory() did not create directory %s", expectedFullPath)
+					t.Errorf("pkg.CreateTargetDirectory() did not create directory %s", expectedFullPath)
 				}
 			}
 		})
@@ -211,9 +210,8 @@ func TestGetPhotoCreationDate(t *testing.T) {
 	// realExifFile := "path/to/your/sample_with_exif.jpg"
 	// expectedExifTime := time.Date(2022, 1, 15, 10, 30, 0, 0, time.Local)
 
-
 	tests := []struct {
-		name        string
+		name                string
 		filePath            string
 		expectedErr         error  // Specific error type for errors.Is
 		expectedErrContains string // Substring for wrapped errors
@@ -244,27 +242,41 @@ func TestGetPhotoCreationDate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := GetPhotoCreationDate(tt.filePath)
+			_, err := pkg.GetPhotoCreationDate(tt.filePath)
 
 			if tt.expectedErr != nil { // Check for specific error type using errors.Is
 				if err == nil {
-					t.Errorf("GetPhotoCreationDate() expected error type %T, got nil", tt.expectedErr)
+					t.Errorf("pkg.GetPhotoCreationDate() expected error type %T, got nil", tt.expectedErr)
 				} else if !errors.Is(err, tt.expectedErr) {
-					t.Errorf("GetPhotoCreationDate() error type = %T, expected type %T, error: %v", err, tt.expectedErr, err)
+					// A special check for pkg.ErrNoExifDate if that's what we're expecting.
+					// However, current test cases use os.ErrNotExist or string matching.
+					// If a test case specifically sets tt.expectedErr = pkg.ErrNoExifDate, this would catch it.
+					if errors.Is(err, pkg.ErrNoExifDate) && tt.expectedErr == pkg.ErrNoExifDate {
+						// This case is fine if tt.expectedErr is indeed pkg.ErrNoExifDate
+					} else {
+						t.Errorf("pkg.GetPhotoCreationDate() error type = %T, expected type %T, error: %v", err, tt.expectedErr, err)
+					}
 				}
 			} else if tt.expectedErrContains != "" { // Check for substring in error
 				if err == nil {
-					t.Errorf("GetPhotoCreationDate() expected error containing '%s', got nil", tt.expectedErrContains)
+					t.Errorf("pkg.GetPhotoCreationDate() expected error containing '%s', got nil", tt.expectedErrContains)
 				} else if !strings.Contains(err.Error(), tt.expectedErrContains) {
-					t.Errorf("GetPhotoCreationDate() error = '%v', expected to contain '%s'", err, tt.expectedErrContains)
+					// If the error is pkg.ErrNoExifDate, its string form is "no EXIF date tag found"
+					// The test case "failed to decode EXIF data" might be too broad if pkg.ErrNoExifDate is returned.
+					// Let's check if the error is pkg.ErrNoExifDate and if the substring matches that.
+					if errors.Is(err, pkg.ErrNoExifDate) && strings.Contains(pkg.ErrNoExifDate.Error(), tt.expectedErrContains) {
+						// This is also fine. e.g. expect "no EXIF date" and get pkg.ErrNoExifDate
+					} else {
+						t.Errorf("pkg.GetPhotoCreationDate() error = '%v', expected to contain '%s'", err, tt.expectedErrContains)
+					}
 				}
 			} else { // Expected no error
 				if err != nil {
-					t.Errorf("GetPhotoCreationDate() unexpected error: %v", err)
+					t.Errorf("pkg.GetPhotoCreationDate() unexpected error: %v", err)
 				}
 				// Add time comparison if tt.expectedTime is set and err is nil
 				// if !resultTime.Equal(tt.expectedTime) {
-				// 	t.Errorf("GetPhotoCreationDate() time = %v, expected %v", resultTime, tt.expectedTime)
+				// 	t.Errorf("pkg.GetPhotoCreationDate() time = %v, expected %v", resultTime, tt.expectedTime)
 				// }
 			}
 		})
