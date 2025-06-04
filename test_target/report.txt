@@ -1,0 +1,13 @@
+Photo Sorting Report
+====================
+
+Summary:
+  - Total files scanned: 4
+  - Files identified for copying (unique or better): 3
+  - Files successfully copied: 3
+  - Duplicate files found and discarded/skipped: 1
+
+Duplicate Details:
+  - Kept: test_source/photoA1.jpg
+    Discarded: test_source/photoA2.jpg
+    Reason: Duplicate content (hash match with test_source/photoA1.jpg)
