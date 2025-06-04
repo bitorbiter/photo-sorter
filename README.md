@@ -21,9 +21,16 @@ Photo Sorter is a command-line tool written in Go to help you organize your phot
    ```
 2. Build the executable:
    ```bash
-   go build
+   go build -v ./cmd/photocp/...
    ```
-This will create a `photo-sorter` (or `photo-sorter.exe` on Windows) executable in the project directory.
+This will create a `photocp` (or `photocp.exe` on Windows) executable in the current directory.
+
+## Running Tests
+To run all the package tests, use the following command:
+```bash
+go test -v ./...
+```
+This command will execute all tests found in the project and provide verbose output.
 
 ## Usage
 Run the tool from the command line, specifying the source and target directories:
