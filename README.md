@@ -14,4 +14,5 @@ Sorts photos by date and removes duplicates.
 * runs on Windows, MacOS and Linux
 * Source and target folder should be given via command line
 * Github workflow used to build and check pull requests
+* Every commit which changes code has to provide unit tests which must be passing
 
