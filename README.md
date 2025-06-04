@@ -13,6 +13,12 @@ Photo Sorter is a command-line tool written in Go to help you organize your phot
 ## Prerequisites
 - Go (version 1.21 or later) is required to build the tool from source.
 
+## Dependencies
+This project uses the `goexif` library to extract EXIF data from images.
+- **goexif**: [https://github.com/rwcarlsen/goexif](https://github.com/rwcarlsen/goexif)
+  - Authors: Robert Carlsen & Contributors
+  - License: BSD 2-Clause "Simplified" License
+
 ## Building from Source
 1. Clone the repository:
    ```bash
@@ -62,3 +68,6 @@ Or on Windows:
 * Unit tests are provided for core functionalities and must pass for code changes.
 
 *(Note: The requirement "If there is a raw version and a jpeg version with the same content, both photos should be copied" from the original README is not currently implemented if "same content" means pixel data. The current duplicate detection is based on file hash, so if a RAW and its derived JPEG have different file contents, they will be treated as distinct files. If they somehow had the same hash but different names/extensions, the current logic would treat them as duplicates and keep one based on resolution if determinable.)*
+
+## License
+This project is licensed under the BSD 2-Clause "Simplified" License. See the [LICENSE](LICENSE) file for details.
