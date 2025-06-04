@@ -1,10 +1,12 @@
-package main
+package pkg_test
 
 import (
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/user/photo-sorter/pkg"
 )
 
 func TestCopyFile(t *testing.T) {
@@ -26,42 +28,42 @@ func TestCopyFile(t *testing.T) {
 	invalidDestPath := "/dev/null/cannot_create_here/destination.txt" // Assuming this path is generally unwritable
 
 	tests := []struct {
-		name        string
-		srcPath     string
-		destPath    string
-		expectErr   bool
+		name         string
+		srcPath      string
+		destPath     string
+		expectErr    bool
 		checkContent bool // whether to verify content after successful copy
 	}{
 		{
-			name:        "successful copy",
-			srcPath:     srcFilePath,
-			destPath:    destFilePath,
-			expectErr:   false,
+			name:         "successful copy",
+			srcPath:      srcFilePath,
+			destPath:     destFilePath,
+			expectErr:    false,
 			checkContent: true,
 		},
 		{
-			name:        "source file does not exist",
-			srcPath:     nonExistentSrcPath,
-			destPath:    filepath.Join(tmpDir, "dest_non_existent_src.txt"),
-			expectErr:   true,
+			name:         "source file does not exist",
+			srcPath:      nonExistentSrcPath,
+			destPath:     filepath.Join(tmpDir, "dest_non_existent_src.txt"),
+			expectErr:    true,
 			checkContent: false,
 		},
 		{
-            name:        "destination is invalid (e.g. unwritable path)",
-            srcPath:     srcFilePath,
-            // On some systems, /dev/null itself is a file, so a subdir might fail.
-            // A more robust test for unwritable might involve setting up permissions,
-            // but this is a common way to test for path creation failures.
-            // If this test is flaky, it might need adjustment based on the test environment.
-            destPath:    invalidDestPath,
-            expectErr:   true,
-            checkContent: false,
-        },
+			name:    "destination is invalid (e.g. unwritable path)",
+			srcPath: srcFilePath,
+			// On some systems, /dev/null itself is a file, so a subdir might fail.
+			// A more robust test for unwritable might involve setting up permissions,
+			// but this is a common way to test for path creation failures.
+			// If this test is flaky, it might need adjustment based on the test environment.
+			destPath:     invalidDestPath,
+			expectErr:    true,
+			checkContent: false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := CopyFile(tt.srcPath, tt.destPath)
+			err := pkg.CopyFile(tt.srcPath, tt.destPath)
 
 			if (err != nil) != tt.expectErr {
 				t.Errorf("CopyFile() error = %v, expectErr %v", err, tt.expectErr)
