@@ -3,6 +3,7 @@ package pkg_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -14,8 +15,19 @@ func TestGenerateReport(t *testing.T) {
 
 	reportFilePathRegular := filepath.Join(tmpDir, "report_regular.txt")
 	reportFilePathNoDuplicates := filepath.Join(tmpDir, "report_no_duplicates.txt")
-	invalidReportDir := "/proc/cannot_write_here" // Directory where file creation should fail
-	invalidReportFilePath := filepath.Join(invalidReportDir, "report_invalid.txt")
+
+	var invalidReportFilePath string
+	if runtime.GOOS == "windows" {
+		// Attempting to create a directory like "NUL" or a file within "NUL" should fail.
+		// os.MkdirAll("NUL/somedir", ...) should fail.
+		// os.Create("NUL/somefile.txt") should fail if NUL is treated as a file.
+		// Let's try making the directory itself NUL, which is invalid for MkdirAll.
+		// Or a subdirectory of NUL.
+		invalidReportFilePath = filepath.Join("NUL", "report_invalid.txt")
+	} else {
+		// Keep the original path for non-Windows
+		invalidReportFilePath = filepath.Join("/proc/cannot_write_here", "report_invalid.txt")
+	}
 
 	duplicateEntries := []pkg.DuplicateInfo{
 		{KeptFile: "path/to/kept1.jpg", DiscardedFile: "path/to/discarded1.jpg", Reason: "Higher resolution"},
