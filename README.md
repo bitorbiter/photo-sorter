@@ -13,4 +13,5 @@ Sorts photos by date and removes duplicates.
 * written in GO
 * runs on Windows, MacOS and Linux
 * Source and target folder should be given via command line
+* Github workflow used to build and check pull requests
 
