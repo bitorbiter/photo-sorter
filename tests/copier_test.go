@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/user/photo-sorter/pkg"
@@ -25,7 +26,18 @@ func TestCopyFile(t *testing.T) {
 	destFilePath := filepath.Join(destDir, "destination.txt")
 
 	nonExistentSrcPath := filepath.Join(tmpDir, "non_existent_source.txt")
-	invalidDestPath := "/dev/null/cannot_create_here/destination.txt" // Assuming this path is generally unwritable
+
+	var invalidDestPath string
+	if runtime.GOOS == "windows" {
+		// Using NUL should make directory creation attempts within it fail.
+		// Or, an invalid drive letter like "Z:/nonexistent/path" could be used if NUL proves problematic.
+		// For now, let's try creating a file inside NUL.
+		invalidDestPath = filepath.Join("NUL", "cannot_create_here", "destination.txt")
+		// As an alternative, direct use of reserved names:
+		// invalidDestPath = "CON"
+	} else {
+		invalidDestPath = "/dev/null/cannot_create_here/destination.txt"
+	}
 
 	tests := []struct {
 		name         string
