@@ -30,7 +30,22 @@ func main() {
 	// --- Command-line flags ---
 	sourceDirFlag := flag.String("sourceDir", "", "Source directory containing photos to sort (required)")
 	targetDirFlag := flag.String("targetDir", "", "Target directory to store sorted photos (required)")
+	helpFlg := flag.Bool("help", false, "Show help message and license information")
 	flag.Parse()
+
+	if *helpFlg {
+		fmt.Println("Usage: photocp -sourceDir <source_directory> -targetDir <target_directory>")
+		fmt.Println("\nOptions:")
+		flag.PrintDefaults() // Prints all defined flags, including -help
+		fmt.Println("\nLicense Information:")
+		fmt.Println("  This application is licensed under the BSD 2-Clause License.")
+		fmt.Println("  See the LICENSE file in the repository for the full license text.")
+		fmt.Println("\nDependency Information:")
+		fmt.Println("  This application uses the goexif library (https://github.com/rwcarlsen/goexif),")
+		fmt.Println("  which is licensed under the BSD 2-Clause License.")
+		fmt.Println("  Copyright (c) 2012, Robert Carlsen & Contributors.")
+		os.Exit(0)
+	}
 
 	sourceDir := *sourceDirFlag
 	targetBaseDir := *targetDirFlag
