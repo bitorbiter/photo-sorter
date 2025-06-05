@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime" // Added for runtime.GOOS
 	"sort"
 	"strings" // Added for strings.Contains
 	"testing"
@@ -160,6 +161,8 @@ func TestFindPotentialTargetConflicts(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			isWindows := runtime.GOOS == "windows"
+
 			results, err := pkg.FindPotentialTargetConflicts(tt.targetMonthDir, tt.baseNameWithoutExt, tt.extension)
 
 			if tt.expectedErrContains != "" {
@@ -174,22 +177,66 @@ func TestFindPotentialTargetConflicts(t *testing.T) {
 				t.Fatalf("FindPotentialTargetConflicts() returned unexpected error: %v", err)
 			}
 
+			currentExpectedConflicts := tt.expectedConflicts
+			if isWindows {
+				// On Windows, if files differ only by case, os.ReadDir might return only one.
+				// We adjust expectedConflicts to reflect this by keeping only one canonical (lowercase key) version.
+				uniqueExpectedForOS := make(map[string]string)
+				for _, fName := range tt.expectedConflicts {
+					// Store the first encountered casing, but key by lowercase to ensure uniqueness by name regardless of case.
+					// This means if "image.jpg" and "image.JPG" are expected, only one will be kept based on iteration order.
+					// For consistency in tests, we can decide to always store the lowercase name if that's what we will compare against.
+					// However, the problem states `FindPotentialTargetConflicts` returns original casing.
+					// So, we make the *expected list* unique based on lowercase, but keep an original casing.
+					lowerFName := strings.ToLower(fName)
+					if _, exists := uniqueExpectedForOS[lowerFName]; !exists {
+						uniqueExpectedForOS[lowerFName] = fName
+					}
+				}
+				newExpectedConflicts := make([]string, 0, len(uniqueExpectedForOS))
+				for _, fName := range uniqueExpectedForOS {
+					newExpectedConflicts = append(newExpectedConflicts, fName)
+				}
+				currentExpectedConflicts = newExpectedConflicts
+			}
+
 			// Normalize expected paths and sort for comparison
-			expectedFullPaths := make([]string, len(tt.expectedConflicts))
-			for i, fName := range tt.expectedConflicts {
+			expectedFullPaths := make([]string, len(currentExpectedConflicts))
+			for i, fName := range currentExpectedConflicts {
 				expectedFullPaths[i] = filepath.Join(tt.targetMonthDir, fName)
 			}
 			sort.Strings(expectedFullPaths)
 			sort.Strings(results)
 
-			// Use length check for empty slices, DeepEqual for non-empty.
-			if len(expectedFullPaths) == 0 {
-				if len(results) != 0 {
-					t.Errorf("FindPotentialTargetConflicts()\n  got: %v\n want empty slice", results)
+			if isWindows {
+				// On Windows, compare paths in a case-insensitive manner.
+				actualForCompare := make([]string, len(results))
+				for i, p := range results {
+					actualForCompare[i] = strings.ToLower(p)
+				}
+				sort.Strings(actualForCompare) // Sort again after toLower
+
+				expectedForCompare := make([]string, len(expectedFullPaths))
+				for i, p := range expectedFullPaths {
+					expectedForCompare[i] = strings.ToLower(p)
+				}
+				sort.Strings(expectedForCompare) // Sort again after toLower
+
+				if len(expectedForCompare) == 0 && len(actualForCompare) == 0 {
+					// Both are empty, which is fine.
+				} else if !reflect.DeepEqual(actualForCompare, expectedForCompare) {
+					t.Errorf("FindPotentialTargetConflicts() [Windows case-insensitive]\n  got (lower): %v\n want (lower): %v\n original got: %v\n original want: %v", actualForCompare, expectedForCompare, results, expectedFullPaths)
 				}
 			} else {
-				if !reflect.DeepEqual(results, expectedFullPaths) {
-					t.Errorf("FindPotentialTargetConflicts()\n  got: %v\n want: %v", results, expectedFullPaths)
+				// Original case-sensitive comparison for non-Windows platforms
+				if len(expectedFullPaths) == 0 {
+					if len(results) != 0 {
+						t.Errorf("FindPotentialTargetConflicts()\n  got: %v\n want empty slice", results)
+					}
+				} else {
+					if !reflect.DeepEqual(results, expectedFullPaths) {
+						t.Errorf("FindPotentialTargetConflicts()\n  got: %v\n want: %v", results, expectedFullPaths)
+					}
 				}
 			}
 		})
