@@ -255,7 +255,7 @@ func TestMainProcessingLogic_DuplicateDetectionAndCopying(t *testing.T) {
 		if err != nil { t.Errorf("Error creating target dir for %s: %v", currentFilePath, err); continue }
 
 		originalExtension := filepath.Ext(currentFilePath)
-		dateTimeStr := photoDate.Format("2006-01-02-150405")
+		dateTimeStr := photoDate.In(time.UTC).Format("2006-01-02-150405")
 		baseNameWithoutExt := dateTimeStr
 		newFileName := fmt.Sprintf("%s%s", baseNameWithoutExt, originalExtension)
 		destPath := filepath.Join(targetMonthDir, newFileName)
