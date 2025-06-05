@@ -14,17 +14,23 @@ This document lists the implemented features and requirements for the Photo Sort
     -   **REQ-CF-FR-03:** The new filename format is `YYYY-MM-DD-HHMMSS(-v).<original_extension>` (e.g., `2023-10-27-153000.jpg` or `2023-10-27-153000-1.jpg`).
 
 -   **REQ-CF-ADD-01:** **Advanced Duplicate Detection:**
-    -   **REQ-CF-ADD-02:** Employs a two-tiered approach to identify duplicate files:
-        1.  **REQ-CF-ADD-03:** **Pixel-Data Hashing (Primary):**
-            -   **REQ-CF-ADD-04:** For supported image formats (currently JPEG, PNG, GIF), the application calculates a SHA-256 hash of the raw pixel data, ignoring metadata.
-            -   **REQ-CF-ADD-05:** This method identifies visually identical images.
-        2.  **REQ-CF-ADD-06:** **Full File Content Hashing (Fallback):**
-            -   **REQ-CF-ADD-07:** For file types where pixel data extraction is not supported (e.g., certain RAW formats, non-image files) or if pixel data extraction fails for any reason, the application falls back to calculating a SHA-256 hash of the entire file content.
-            -   **REQ-CF-ADD-08:** This hash is used to find duplicates among other files that were also processed using this fallback method.
+    -   Employs a layered approach to efficiently identify duplicate files:
+        1.  **REQ-CF-ADD-02:** **File Size Comparison:**
+            -   Files with different sizes are considered non-duplicates immediately.
+        2.  **REQ-CF-ADD-03:** **EXIF Data Signature (for images):**
+            -   If file sizes match and files are identified as image formats supporting EXIF data, the application attempts to generate a signature from key EXIF tags (e.g., DateTimeOriginal, Make, Model, ImageWidth, ImageHeight).
+            -   If these signatures differ, the files are considered non-duplicates.
+            -   This step is skipped if EXIF data is not available, not supported for the file type, or if files are not images.
+        3.  **REQ-CF-ADD-04:** **Pixel-Data Hashing (Primary for images):**
+            -   **REQ-CF-ADD-05:** If the above checks are inconclusive or passed, for supported image formats (currently JPEG, PNG, GIF), the application calculates a SHA-256 hash of the raw pixel data, ignoring metadata.
+            -   **REQ-CF-ADD-06:** This method identifies visually identical images.
+        4.  **REQ-CF-ADD-07:** **Full File Content Hashing (Fallback/General):**
+            -   **REQ-CF-ADD-08:** For non-image files, or if pixel-data hashing is not supported/fails for an image, or if pixel-data hashes match (requiring a final content check), the application calculates a SHA-256 hash of the entire file content.
+            -   **REQ-CF-ADD-09:** This hash is used to find duplicates among other files processed by this method or as a definitive confirmation.
 
 -   **REQ-CF-DR-01:** **Duplicate Resolution:**
-    -   **REQ-CF-DR-02:** **Resolution Preference (for Pixel-Data Duplicates):** If multiple files are identified as duplicates based on their pixel-data hash, the tool attempts to keep the version with the highest image resolution (calculated as width * height).
-    -   **REQ-CF-DR-03:** **First Encountered (for File-Hash Duplicates or Undetermined Resolution):** If duplicates are identified by full file hash, or if image resolution cannot be determined for pixel-data duplicates, the first version of the file encountered during processing is typically kept.
+    -   **REQ-CF-DR-02:** **Resolution Preference (for Pixel-Data Duplicates):** If multiple files are identified as duplicates based on their pixel-data hash (after passing earlier checks), the tool attempts to keep the version with the highest image resolution (calculated as width * height).
+    -   **REQ-CF-DR-03:** **First Encountered (for File-Hash Duplicates or Undetermined Resolution):** If duplicates are identified by full file hash (either as primary method or fallback), or if image resolution cannot be determined for pixel-data duplicates, the first version of the file encountered during processing is typically kept.
 
 ## Reporting
 

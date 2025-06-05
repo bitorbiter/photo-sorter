@@ -4,10 +4,15 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	"errors"
+	// "errors" // No longer directly used in main after refactor
 	"os"
 	"path/filepath"
-	"time" // time.Time is used for photoDate variable type and other time operations
+	"strings" // Added for checking file extensions
+	"time"    // time.Time is used for photoDate variable type and other time operations
+
+	_ "image/gif"  // Register GIF decoder
+	_ "image/jpeg" // Register JPEG decoder
+	_ "image/png"  // Register PNG decoder
 
 	"github.com/user/photo-sorter/pkg"
 )
@@ -18,16 +23,210 @@ import (
 // For now, keeping this local, assuming it's distinct or will be reconciled
 // if pkg.GenerateReport or other functions expect pkg.FileInfo.
 type FileInfo struct {
-	Path      string
-	Width     int
-	Height    int
-	PixelHash string // SHA-256 hash of pixel data
-	FileHash  string // SHA-256 hash of full file content
-	HashType  string // "pixel", "file", or "none"
+	Path   string
+	Width  int
+	Height int
+	// Fields like TargetDestPath, PhotoDate, DateSource will be populated before copying,
+	// but are not stored in filesSelectedForCopy list initially.
 }
 
 // DuplicateInfo is defined in the pkg package (specifically in pkg/reporter.go).
 // main.go will use pkg.DuplicateInfo.
+
+func runApplicationLogic(sourceDir string, targetBaseDir string) (processedFiles int, copiedFiles int, filesToCopy int, duplicates []pkg.DuplicateInfo, pixelHashUnsupported int, err error) {
+	reportFilePath := filepath.Join(targetBaseDir, "report.txt")
+	fmt.Printf("Photo Sorter Initializing...\nSource: %s\nTarget: %s\nReport: %s\n", sourceDir, targetBaseDir, reportFilePath)
+
+	// --- Initialize counters and tracking structures ---
+	// processedFilesCounter, copiedFilesCounter, filesToCopyCount are return values
+	// pixelHashUnsupportedCounter is also a return value
+	filesSelectedForCopy := []FileInfo{}      // Holds FileInfo for files to be copied eventually.
+	// duplicateReportEntries is also a return value
+
+	// --- Scanning ---
+	fmt.Printf("Scanning source directory: %s\n", sourceDir)
+	imageFiles, scanErr := pkg.ScanSourceDirectory(sourceDir)
+	if scanErr != nil {
+		// Log non-fatal error from pkg.ScanSourceDirectory if it's just about unreadable files,
+		// but Fatal if the directory itself is bad (already handled by Stat above mostly)
+		log.Printf("Warning during scanning source directory '%s': %v. Attempting to continue with any found files.\n", sourceDir, scanErr)
+		if imageFiles == nil { // If the error was critical and no files could be read
+			// Return an error instead of Fatalf
+			return 0, 0, 0, nil, 0, fmt.Errorf("critical error: No files could be read from source directory '%s'", sourceDir)
+		}
+	}
+
+	if len(imageFiles) == 0 {
+		fmt.Println("No image files found in source directory.")
+		if genErr := pkg.GenerateReport(reportFilePath, duplicates, copiedFiles, processedFiles, 0, pixelHashUnsupported); genErr != nil {
+			// Return an error instead of Fatalf
+			return 0, 0, 0, duplicates, pixelHashUnsupported, fmt.Errorf("failed to generate final report: %w", genErr)
+		}
+		return 0, 0, 0, duplicates, pixelHashUnsupported, nil // No error, but no files processed
+	}
+
+	fmt.Printf("Found %d image file(s) to process.\n", len(imageFiles))
+	processedFiles = len(imageFiles)
+
+	// --- Main processing loop ---
+	for _, currentSourceFilepath := range imageFiles {
+		fmt.Printf("\nProcessing: %s\n", currentSourceFilepath)
+
+		currentWidth, currentHeight, errRes := pkg.GetImageResolution(currentSourceFilepath)
+		if errRes != nil {
+			// For non-image files or images where resolution cannot be determined,
+			// log a warning but proceed with Width=0, Height=0.
+			// These files will be processed using full file hash if they are not images,
+			// or if they are images but this step failed.
+			log.Printf("  - Warning: Could not get resolution for %s: %v. Proceeding with 0x0 resolution.\n", currentSourceFilepath, errRes)
+			currentWidth = 0
+			currentHeight = 0
+		} else {
+			fmt.Printf("  - Resolution: %dx%d\n", currentWidth, currentHeight)
+		}
+
+		currentSourceInfo := FileInfo{
+			Path:   currentSourceFilepath,
+			Width:  currentWidth,
+			Height: currentHeight,
+		}
+
+		isDuplicateOfExisting := false
+		shouldReplaceExistingSelected := false
+		indexOfExistingToReplace := -1
+		reasonForReplacement := ""
+
+		for idx, existingSelectedInfo := range filesSelectedForCopy {
+			fmt.Printf("  - Comparing with selected file: %s\n", existingSelectedInfo.Path)
+			compResult, errComp := pkg.AreFilesPotentiallyDuplicate(currentSourceInfo.Path, existingSelectedInfo.Path)
+
+			if errComp != nil {
+				log.Printf("    - Error comparing %s and %s: %v. Treating as non-duplicate for this pair.\n", currentSourceInfo.Path, existingSelectedInfo.Path, errComp)
+				continue
+			}
+
+			if compResult.HashType == pkg.HashTypeFile {
+				ext := strings.ToLower(filepath.Ext(currentSourceInfo.Path))
+				if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" {
+					// This file is an image type but was processed using full file hash.
+					// This implies pixel hashing was not applicable or failed.
+					pixelHashUnsupported++
+				}
+			}
+
+			if compResult.AreDuplicates {
+				isDuplicateOfExisting = true
+
+				if compResult.Reason == pkg.ReasonPixelHashMatch {
+					fmt.Printf("    - Pixel hash match with %s.\n", existingSelectedInfo.Path)
+					if currentSourceInfo.Width*currentSourceInfo.Height > existingSelectedInfo.Width*existingSelectedInfo.Height {
+						fmt.Printf("    - Current file %s (%dx%d) is better resolution than selected %s (%dx%d).\n",
+							currentSourceInfo.Path, currentSourceInfo.Width, currentSourceInfo.Height,
+							existingSelectedInfo.Path, existingSelectedInfo.Width, existingSelectedInfo.Height)
+
+						if !shouldReplaceExistingSelected || (currentSourceInfo.Width*currentSourceInfo.Height > filesSelectedForCopy[indexOfExistingToReplace].Width*filesSelectedForCopy[indexOfExistingToReplace].Height) {
+							shouldReplaceExistingSelected = true
+							indexOfExistingToReplace = idx
+							reasonForReplacement = fmt.Sprintf("%s (current %s has better resolution than %s)", compResult.Reason, currentSourceInfo.Path, existingSelectedInfo.Path)
+						}
+					} else {
+						fmt.Printf("    - Existing selected file %s (%dx%d) is better or same resolution as current %s (%dx%d).\n",
+							existingSelectedInfo.Path, existingSelectedInfo.Width, existingSelectedInfo.Height,
+							currentSourceInfo.Path, currentSourceInfo.Width, currentSourceInfo.Height)
+						duplicates = append(duplicates, pkg.DuplicateInfo{KeptFile: existingSelectedInfo.Path, DiscardedFile: currentSourceInfo.Path, Reason: compResult.Reason + " (existing kept - resolution)"})
+						goto nextSourceFileIteration
+					}
+				} else {
+					fmt.Printf("    - Duplicate (Reason: %s) with %s. Keeping existing selected file.\n", compResult.Reason, existingSelectedInfo.Path)
+					duplicates = append(duplicates, pkg.DuplicateInfo{KeptFile: existingSelectedInfo.Path, DiscardedFile: currentSourceInfo.Path, Reason: compResult.Reason})
+					goto nextSourceFileIteration
+				}
+			}
+		}
+
+		if shouldReplaceExistingSelected {
+			discardedInfo := filesSelectedForCopy[indexOfExistingToReplace]
+			duplicates = append(duplicates, pkg.DuplicateInfo{KeptFile: currentSourceInfo.Path, DiscardedFile: discardedInfo.Path, Reason: reasonForReplacement})
+			filesSelectedForCopy[indexOfExistingToReplace] = currentSourceInfo
+			fmt.Printf("  - Marked for replacement: %s will replace %s (Reason: %s)\n", currentSourceInfo.Path, discardedInfo.Path, reasonForReplacement)
+		} else if !isDuplicateOfExisting {
+			filesSelectedForCopy = append(filesSelectedForCopy, currentSourceInfo)
+			fmt.Printf("  - Marked for copy: %s (unique so far)\n", currentSourceInfo.Path)
+		}
+
+		nextSourceFileIteration:
+	}
+
+
+	fmt.Printf("\n--- Starting Copying Phase ---\nFound %d files to copy.\n", len(filesSelectedForCopy))
+	for _, finalInfoToCopy := range filesSelectedForCopy {
+		fmt.Printf("Preparing to copy selected file: %s\n", finalInfoToCopy.Path)
+		var photoDate time.Time
+		var dateSource string
+
+		exifDate, dateErr := pkg.GetPhotoCreationDate(finalInfoToCopy.Path)
+		if dateErr == nil {
+			photoDate = exifDate
+			dateSource = "EXIF"
+			fmt.Printf("  - Extracted date (%s) for %s: %s\n", dateSource, finalInfoToCopy.Path, photoDate.Format("2006-01-02"))
+		} else {
+			log.Printf("  - Warning: Could not get EXIF date for %s: %v. Using file modification time.\n", finalInfoToCopy.Path, dateErr)
+			fileInfoStat, statErr := os.Stat(finalInfoToCopy.Path)
+			if statErr != nil {
+				log.Printf("    - Error getting file info for %s: %v. Skipping copy.\n", finalInfoToCopy.Path, statErr)
+				continue
+			}
+			photoDate = fileInfoStat.ModTime()
+			dateSource = "FileModTime"
+			fmt.Printf("  - Using fallback date (%s) for %s: %s\n", dateSource, finalInfoToCopy.Path, photoDate.Format("2006-01-02-150405"))
+		}
+
+		targetMonthDir, dirErr := pkg.CreateTargetDirectory(targetBaseDir, photoDate)
+		if dirErr != nil {
+			log.Printf("  - Error creating target directory for %s (date: %s, source: %s): %v. Skipping copy.\n",
+				finalInfoToCopy.Path, photoDate.Format("2006-01-02-150405"), dateSource, dirErr)
+			continue
+		}
+
+		originalExtension := filepath.Ext(finalInfoToCopy.Path)
+		baseName := photoDate.In(time.UTC).Format("2006-01-02-150405")
+		newFileName := fmt.Sprintf("%s%s", baseName, originalExtension)
+		destPath := filepath.Join(targetMonthDir, newFileName)
+
+		version := 1
+		originalDestPathForLog := destPath
+		for {
+			if _, statErr := os.Stat(destPath); os.IsNotExist(statErr) {
+				if destPath != originalDestPathForLog {
+					fmt.Printf("  - Path %s existed. Using versioned name: %s\n", originalDestPathForLog, destPath)
+				}
+				break
+			} else if statErr != nil {
+				log.Printf("  - Error stating file %s: %v. Skipping copy of %s.\n", destPath, statErr, finalInfoToCopy.Path)
+				goto nextFileToCopyLoop
+			}
+			newFileName = fmt.Sprintf("%s-%d%s", baseName, version, originalExtension)
+			destPath = filepath.Join(targetMonthDir, newFileName)
+			version++
+		}
+		fmt.Printf("  - Preparing to copy %s to: %s\n", finalInfoToCopy.Path, destPath)
+
+		if copyErr := pkg.CopyFile(finalInfoToCopy.Path, destPath); copyErr != nil {
+			log.Printf("  - Error copying file %s to %s: %v.\n", finalInfoToCopy.Path, destPath, copyErr)
+		} else {
+			fmt.Printf("  - Successfully copied %s to %s\n", finalInfoToCopy.Path, destPath)
+			copiedFiles++
+		}
+		nextFileToCopyLoop:
+	}
+
+	fmt.Println("\n--- Photo Sorting Process Completed ---")
+	filesToCopy = len(filesSelectedForCopy)
+	if genErr := pkg.GenerateReport(reportFilePath, duplicates, copiedFiles, processedFiles, filesToCopy, pixelHashUnsupported); genErr != nil {
+		return processedFiles, copiedFiles, filesToCopy, duplicates, pixelHashUnsupported, fmt.Errorf("failed to generate final report: %w", genErr)
+	}
+	return processedFiles, copiedFiles, filesToCopy, duplicates, pixelHashUnsupported, nil
+}
 
 func main() {
 	// --- Command-line flags ---
@@ -52,7 +251,6 @@ func main() {
 
 	sourceDir := *sourceDirFlag
 	targetBaseDir := *targetDirFlag
-	reportFilePath := filepath.Join(targetBaseDir, "report.txt")
 
 	// --- Validate Flags ---
 	if sourceDir == "" {
@@ -73,250 +271,9 @@ func main() {
 		log.Fatalf("Error: Source path '%s' is not a directory.", sourceDir)
 	}
 
-	fmt.Printf("Photo Sorter Initializing...\nSource: %s\nTarget: %s\nReport: %s\n", sourceDir, targetBaseDir, reportFilePath)
-
-	// --- Initialize counters and tracking structures ---
-	processedFilesCounter := 0
-	copiedFilesCounter := 0
-	var filesToCopyCount int // Number of files deemed unique or better resolution
-
-	// Store FileInfo for files successfully pixel-hashed, keyed by their pixel hash
-	pixelHashedCandidates := make(map[string]FileInfo)
-	// Store FileInfo for files that fall back to full file hash, keyed by their file hash
-	fileHashedCandidates := make(map[string]FileInfo)
-	var duplicateReportEntries []pkg.DuplicateInfo // Uses pkg.DuplicateInfo
-	pixelHashUnsupportedCounter := 0
-
-	// --- Scanning ---
-	fmt.Printf("Scanning source directory: %s\n", sourceDir)
-	imageFiles, err := pkg.ScanSourceDirectory(sourceDir)
-	if err != nil {
-		// Log non-fatal error from pkg.ScanSourceDirectory if it's just about unreadable files,
-		// but Fatal if the directory itself is bad (already handled by Stat above mostly)
-		log.Printf("Warning during scanning source directory '%s': %v. Attempting to continue with any found files.\n", sourceDir, err)
-		if imageFiles == nil { // If the error was critical and no files could be read
-			log.Fatalf("Critical error: No files could be read from source directory '%s'. Exiting.", sourceDir)
-		}
-	}
-
-	if len(imageFiles) == 0 {
-		fmt.Println("No image files found in source directory.")
-		// Assuming GenerateReport expects the local DuplicateInfo type for now.
-		// This will be confirmed/fixed when we check pkg/reporter.go's GenerateReport signature.
-		// Add pixelHashUnsupportedCounter, which will be 0 at this point.
-		if genErr := pkg.GenerateReport(reportFilePath, duplicateReportEntries, copiedFilesCounter, processedFilesCounter, filesToCopyCount, pixelHashUnsupportedCounter); genErr != nil {
-			log.Fatalf("Failed to generate final report: %v", genErr)
-		}
-		return
-	}
-
-	fmt.Printf("Found %d image file(s) to process.\n", len(imageFiles))
-	processedFilesCounter = len(imageFiles)
-
-	// --- Main processing loop ---
-	for _, currentFilePath := range imageFiles {
-		fmt.Printf("\nProcessing: %s\n", currentFilePath)
-		processThisFile := false // Flag to determine if the current file should be copied
-
-		currentWidth, currentHeight, errRes := pkg.GetImageResolution(currentFilePath)
-		if errRes != nil {
-			log.Printf("  - Warning: Could not get resolution for %s: %v. Resolution comparison may be skipped or impacted.\n", currentFilePath, errRes)
-			currentWidth, currentHeight = 0, 0 // Ensure zero values if resolution failed
-		} else {
-			fmt.Printf("  - Resolution: %dx%d\n", currentWidth, currentHeight)
-		}
-
-		currentFileInfo := FileInfo{
-			Path:   currentFilePath,
-			Width:  currentWidth,
-			Height: currentHeight,
-		}
-
-		// Attempt Pixel Hashing
-		pixelHash, errPixel := pkg.CalculatePixelDataHash(currentFilePath)
-		logPixelHashAttemptNeeded := true // Used to control logging for fallback messages
-
-		if errPixel == nil {
-			currentFileInfo.PixelHash = pixelHash
-			currentFileInfo.HashType = "pixel"
-			fmt.Printf("  - Pixel Hash: %s\n", pixelHash)
-			logPixelHashAttemptNeeded = false
-
-			if existingPixelFileInfo, found := pixelHashedCandidates[pixelHash]; found {
-				fmt.Printf("  - Pixel hash collision: Potential duplicate of %s\n", existingPixelFileInfo.Path)
-				reason := fmt.Sprintf("Pixel hash match with %s", existingPixelFileInfo.Path)
-				keptFileInfo := existingPixelFileInfo
-				discardedFileInfo := currentFileInfo
-
-				// Resolution comparison logic for pixel hash duplicates
-				canCompareResolutions := errRes == nil && existingPixelFileInfo.Width > 0 && existingPixelFileInfo.Height > 0 && currentFileInfo.Width > 0 && currentFileInfo.Height > 0
-
-				if canCompareResolutions {
-					currentPixels := currentFileInfo.Width * currentFileInfo.Height
-					existingPixels := existingPixelFileInfo.Width * existingPixelFileInfo.Height
-
-					if (float64(currentPixels) > float64(existingPixels)*1.1) || (existingPixels == 0 && currentPixels > 0) {
-						log.Printf("    - Resolution Check (Pixel Hash): Current file %s (%dx%d) is better than existing %s (%dx%d).\n",
-							currentFileInfo.Path, currentFileInfo.Width, currentFileInfo.Height,
-							existingPixelFileInfo.Path, existingPixelFileInfo.Width, existingPixelFileInfo.Height)
-						reason = fmt.Sprintf("Pixel hash match, current file %s (%dx%d) has higher resolution than %s (%dx%d)",
-							currentFileInfo.Path, currentFileInfo.Width, currentFileInfo.Height, existingPixelFileInfo.Path, existingPixelFileInfo.Width, existingPixelFileInfo.Height)
-						keptFileInfo = currentFileInfo
-						discardedFileInfo = existingPixelFileInfo
-						pixelHashedCandidates[pixelHash] = currentFileInfo
-						processThisFile = true
-						fmt.Printf("  - Replacing previous pixel candidate %s with %s due to better resolution.\n", discardedFileInfo.Path, keptFileInfo.Path)
-					} else {
-						log.Printf("    - Resolution Check (Pixel Hash): Current file %s (%dx%d) is NOT significantly better. Existing version kept: %s.\n",
-							currentFileInfo.Path, currentFileInfo.Width, currentFileInfo.Height, existingPixelFileInfo.Path)
-						processThisFile = false
-						reason = fmt.Sprintf("Pixel hash match, existing file %s (%dx%d) kept due to similar or better resolution than %s (%dx%d)",
-							existingPixelFileInfo.Path, existingPixelFileInfo.Width, existingPixelFileInfo.Height, currentFileInfo.Path, currentFileInfo.Width, currentFileInfo.Height)
-					}
-				} else {
-					log.Printf("    - Resolution Check (Pixel Hash): Could not reliably compare resolutions. Existing version kept: %s.\n", existingPixelFileInfo.Path)
-					processThisFile = false // Keep the first one encountered if resolutions can't be compared
-					reason = fmt.Sprintf("Pixel hash match with %s, resolution comparison skipped or failed, kept existing.", existingPixelFileInfo.Path)
-				}
-				duplicateReportEntries = append(duplicateReportEntries, pkg.DuplicateInfo{
-					KeptFile:      keptFileInfo.Path,
-					DiscardedFile: discardedFileInfo.Path,
-					Reason:        reason,
-				})
-				if !processThisFile {
-					fmt.Printf("  - Skipping pixel duplicate: %s (Kept: %s)\n", currentFilePath, keptFileInfo.Path)
-					// continue // This continue was causing an issue; logic flow handles it.
-				}
-			} else {
-				pixelHashedCandidates[pixelHash] = currentFileInfo
-				processThisFile = true
-				fmt.Printf("  - Unique pixel content. Marked for processing.\n")
-			}
-		} else {
-			// Pixel hash failed, decide action based on error type
-			if errors.Is(errPixel, pkg.ErrUnsupportedForPixelHashing) {
-				if logPixelHashAttemptNeeded {
-					log.Printf("  - Info: Pixel data hashing not supported for %s: %v. Falling back to full file hash.\n", currentFilePath, errPixel)
-				}
-				pixelHashUnsupportedCounter++
-				currentFileInfo.HashType = "file"
-
-				// Attempt Full File Hashing (Fallback)
-				fileHash, errFile := pkg.CalculateFileHash(currentFilePath)
-				if errFile == nil {
-					currentFileInfo.FileHash = fileHash
-					fmt.Printf("  - File Hash (fallback): %s\n", fileHash)
-
-					if existingFileHashInfo, found := fileHashedCandidates[fileHash]; found {
-						fmt.Printf("  - File hash collision (fallback): Duplicate of %s\n", existingFileHashInfo.Path)
-						processThisFile = false // Keep first encountered for file hash duplicates
-						reason := fmt.Sprintf("File hash match (pixel hashing not supported) with %s. Kept existing.", existingFileHashInfo.Path)
-						duplicateReportEntries = append(duplicateReportEntries, pkg.DuplicateInfo{
-							KeptFile:      existingFileHashInfo.Path,
-							DiscardedFile: currentFileInfo.Path,
-							Reason:        reason,
-						})
-						fmt.Printf("  - Skipping file hash duplicate (fallback): %s (Kept: %s)\n", currentFilePath, existingFileHashInfo.Path)
-					} else {
-						fileHashedCandidates[fileHash] = currentFileInfo
-						processThisFile = true
-						fmt.Printf("  - Unique file content (fallback). Marked for processing.\n")
-					}
-				} else {
-					log.Printf("  - Error calculating file hash for %s: %v. Skipping.\n", currentFilePath, errFile)
-					currentFileInfo.HashType = "none"
-					processThisFile = false
-				}
-			} else {
-				// Other error from pixel hashing (e.g., file read error during pixel hashing)
-				log.Printf("  - Error calculating pixel hash for %s: %v. Skipping.\n", currentFilePath, errPixel)
-				currentFileInfo.HashType = "none"
-				processThisFile = false
-			}
-		}
-
-		// If, after all hashing and duplicate checks, the file is still marked for processing
-		if !processThisFile { // If decided not to process (e.g. it's a duplicate and not better)
-			fmt.Printf("  - Final decision: Skipping %s\n", currentFilePath)
-			continue // Move to the next file
-		}
-		// Ensure that if processThisFile is true, we actually proceed.
-		// The if processThisFile { filesToCopyCount++ ... } block should follow directly.
-
-		// Now, if processThisFile is true, proceed with copying.
-		if processThisFile { // This was the block potentially missing its 'if'
-			filesToCopyCount++
-
-			var photoDate time.Time
-			var dateSource string
-
-			exifDate, err := pkg.GetPhotoCreationDate(currentFilePath)
-			if err == nil {
-				photoDate = exifDate
-				dateSource = "EXIF"
-				fmt.Printf("  - Extracted date (%s): %s\n", dateSource, photoDate.Format("2006-01-02"))
-			} else {
-				log.Printf("  - Warning: Could not get EXIF date for %s: %v. Using file modification time.\n", currentFilePath, err)
-				fileInfoStat, statErr := os.Stat(currentFilePath)
-				if statErr != nil {
-					log.Printf("    - Error getting file info for %s: %v. Skipping copy.\n", currentFilePath, statErr)
-					filesToCopyCount--
-					continue
-				}
-				photoDate = fileInfoStat.ModTime()
-				dateSource = "FileModTime"
-				fmt.Printf("  - Using fallback date (%s): %s\n", dateSource, photoDate.Format("2006-01-02-150405"))
-			}
-
-			targetMonthDir, err := pkg.CreateTargetDirectory(targetBaseDir, photoDate) // Changed targetDayDir to targetMonthDir
-			if err != nil {
-				log.Printf("  - Error creating target directory for %s (date: %s, source: %s): %v. Skipping copy.\n",
-					currentFilePath, photoDate.Format("2006-01-02-150405"), dateSource, err)
-				filesToCopyCount--
-				continue
-			}
-
-			originalExtension := filepath.Ext(currentFilePath)
-			baseName := photoDate.In(time.UTC).Format("2006-01-02-150405")
-			newFileName := fmt.Sprintf("%s%s", baseName, originalExtension)
-			destPath := filepath.Join(targetMonthDir, newFileName) // Use targetMonthDir
-
-			// Handle filename conflicts with versioning
-			version := 1
-			originalDestPath := destPath // Keep track of the first path tried for logging
-			for {
-				if _, statErr := os.Stat(destPath); os.IsNotExist(statErr) {
-					if destPath != originalDestPath { // Log if a new name was generated
-						fmt.Printf("  - Path %s existed. Using versioned name: %s\n", originalDestPath, destPath)
-					}
-					break // Path does not exist, use this destPath
-				} else if statErr != nil {
-					// Some other error when stating the file, log and skip copy for this file
-					log.Printf("  - Error stating file %s: %v. Skipping copy.\n", destPath, statErr)
-					filesToCopyCount--
-					goto nextFileLoop // Using goto to break out of this and continue outer loop
-				}
-				// Path exists, try next version
-				newFileName = fmt.Sprintf("%s-%d%s", baseName, version, originalExtension)
-				destPath = filepath.Join(targetMonthDir, newFileName)
-				version++
-			}
-			fmt.Printf("  - Preparing to copy to: %s\n", destPath)
-
-			if err := pkg.CopyFile(currentFilePath, destPath); err != nil {
-				log.Printf("  - Error copying file %s to %s: %v.\n", currentFilePath, destPath, err)
-				filesToCopyCount--
-			} else {
-				fmt.Printf("  - Successfully copied %s to %s\n", currentFilePath, destPath)
-				copiedFilesCounter++
-			}
-		} // This closes the 'if processThisFile' block
-		nextFileLoop: // Label for goto
-	} // This closes the main 'for' loop
-
-	fmt.Println("\n--- Photo Sorting Process Completed ---")
-	// Assuming GenerateReport expects the local DuplicateInfo type.
-	if err := pkg.GenerateReport(reportFilePath, duplicateReportEntries, copiedFilesCounter, processedFilesCounter, filesToCopyCount, pixelHashUnsupportedCounter); err != nil {
-		log.Fatalf("Failed to generate final report: %v", err)
+	// Call the extracted application logic
+	_, _, _, _, _, appErr := runApplicationLogic(sourceDir, targetBaseDir)
+	if appErr != nil {
+		log.Fatalf("Application Error: %v", appErr)
 	}
 }

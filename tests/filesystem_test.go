@@ -1,4 +1,4 @@
-package pkg_test
+package tests
 
 import (
 	"errors" // Added for errors.Is
