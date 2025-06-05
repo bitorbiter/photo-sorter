@@ -76,6 +76,8 @@ func mockGetPhotoCreationDate(filePath string) (time.Time, error) {
 	return time.Time{}, errors.New("mock EXIF error: reading disabled for this test")
 }
 
+// TestGenerateDestinationPathLogic tests the construction of the destination filename.
+// Covers: REQ-CF-FR-03
 func TestGenerateDestinationPathLogic(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -106,6 +108,12 @@ func TestGenerateDestinationPathLogic(t *testing.T) {
 
 // TestMainProcessingLogic_DuplicateDetectionAndCopying is an integration-style test
 // that simulates the core file processing loop of main.go.
+// Covers:
+// - REQ-CF-DS-01, REQ-CF-DS-02, REQ-CF-DS-04 (Date sorting, YYYY/MM/DD structure, fallback to modTime)
+// - REQ-CF-FR-01, REQ-CF-FR-02, REQ-CF-FR-03 (File renaming)
+// - REQ-CF-ADD-01 to REQ-CF-ADD-08 (Advanced duplicate detection - two-tiered, pixel/file hashing)
+// - REQ-CF-DR-01, REQ-CF-DR-02, REQ-CF-DR-03 (Duplicate resolution - preference, fallback)
+// - REQ-RP-RC-07, REQ-RP-RC-08, REQ-RP-RC-09, REQ-RP-RC-10, REQ-RP-RC-11 (Reporting aspects via duplicateReportEntries check)
 func TestMainProcessingLogic_DuplicateDetectionAndCopying(t *testing.T) {
 	sourceDir := t.TempDir()
 	targetBaseDir := t.TempDir()
