@@ -152,3 +152,89 @@ func parseExifDateTime(tag *tiff.Tag) (time.Time, error) {
 	}
 	return t, nil
 }
+
+// FindPotentialTargetConflicts returns a list of file paths in targetMonthDir
+// that could conflict with newBaseName (e.g., "2023-10-27-153000.jpg",
+// "2023-10-27-153000-1.jpg", etc.)
+// baseNameWithoutExt should not include the extension.
+// extension should include the dot (e.g., ".jpg").
+func FindPotentialTargetConflicts(targetMonthDir, baseNameWithoutExt, extension string) ([]string, error) {
+	var conflictingFiles []string
+
+	// Ensure extension starts with a dot
+	if !strings.HasPrefix(extension, ".") {
+		extension = "." + extension
+	}
+	// Normalize extension to lowercase for case-insensitive comparison
+	normalizedExtension := strings.ToLower(extension)
+
+	entries, err := os.ReadDir(targetMonthDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil // Directory doesn't exist, so no conflicts
+		}
+		return nil, fmt.Errorf("failed to read target directory %s: %w", targetMonthDir, err)
+	}
+
+	// Regex pattern: baseNameWithoutExt + "(-[0-9]+)?" + extension
+	// Example: "2023-10-27-153000" + "(-[0-9]+)?" + ".jpg"
+	// This will match:
+	// 2023-10-27-153000.jpg
+	// 2023-10-27-153000-1.jpg
+	// 2023-10-27-153000-123.jpg
+	// It will not match:
+	// 2023-10-27-153000-abc.jpg (non-digit version)
+	// 2023-10-27-153000--1.jpg (double hyphen)
+	//
+	// We need to escape baseNameWithoutExt and extension for regex, though typically they won't have special chars.
+	// For simplicity and given the controlled nature of these inputs, direct string matching is safer and clearer.
+
+	prefix := baseNameWithoutExt
+	suffix := normalizedExtension
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		entryName := entry.Name()
+		entryNameLower := strings.ToLower(entryName)
+
+		if strings.HasPrefix(entryNameLower, strings.ToLower(prefix)) && strings.HasSuffix(entryNameLower, suffix) {
+			// Check the part between prefix and suffix
+			middlePart := entryName[len(prefix) : len(entryName)-len(extension)] // Use original case for slicing
+
+			if middlePart == "" { // Exact match, e.g., baseNameWithoutExt.jpg
+				conflictingFiles = append(conflictingFiles, filepath.Join(targetMonthDir, entryName))
+				continue
+			}
+
+			// Check for -v pattern, e.g., baseNameWithoutExt-1.jpg
+			if strings.HasPrefix(middlePart, "-") {
+				versionStr := middlePart[1:] // remove the leading '-'
+				if versionStr == "" {        // e.g. imagename-.jpg
+					continue
+				}
+				allDigits := true
+				for _, r := range versionStr {
+					if r < '0' || r > '9' {
+						allDigits = false
+						break
+					}
+				}
+				if allDigits {
+					conflictingFiles = append(conflictingFiles, filepath.Join(targetMonthDir, entryName))
+				}
+			}
+		}
+	}
+
+	return conflictingFiles, nil
+}
+
+// IsImageExtension checks if the given filePath has a known image extension.
+// It uses the internal imageExtensions map.
+func IsImageExtension(filePath string) bool {
+	ext := strings.ToLower(filepath.Ext(filePath))
+	_, exists := imageExtensions[ext]
+	return exists
+}

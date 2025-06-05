@@ -85,34 +85,27 @@ Or on Windows:
 ## Duplicate Handling and Report
 The core logic of Photo Sorter involves first thoroughly comparing all processable files from the source directory to identify duplicates. Only files determined to be unique, or the preferred version in a set of duplicates (e.g., highest resolution), are then selected for the actual copy operation. This ensures that the target directory is populated efficiently without redundant files.
 
-The comparison process now first checks if a potential duplicate file already exists at the target location. If the target file is not found, no comparison is performed for that specific source-target pair, optimizing the process. If the target file exists, the multi-step comparison (size, EXIF, pixel hash, file hash) proceeds. The tool uses an enhanced multi-stage approach for this identification process:
+The comparison process prioritizes checking source files against files already present in the target directory structure. If no target duplicate is found, the source file is then compared against other source files already selected for copying in the current session. A multi-stage approach is used:
 
-1.  **File Size Comparison:**
-    *   The first and quickest check. Files with different sizes are immediately considered non-duplicates. This avoids unnecessary processing for obviously different files.
+**For Image-vs-Image Comparisons:**
+If both files are identified as image types (e.g., based on extension like .jpg, .png, .gif):
+1.  **EXIF Data Signature:** An attempt is made to generate a signature from key EXIF tags (e.g., `DateTimeOriginal`, `Make`, `Model`, `ImageWidth`, `ImageHeight`). If these signatures differ, the files are considered non-duplicates. This step helps differentiate images taken at different times or with different camera settings.
+2.  **Pixel-Data Hashing:** If EXIF signatures match, are absent in one or both files, or if this check is otherwise inconclusive, the tool calculates a SHA-256 hash of the raw pixel data for supported image formats (e.g., JPEG, PNG, GIF), deliberately ignoring all metadata.
+    *   If these pixel-data hashes match, the images are considered duplicates at this stage (i.e., their image sensor data is identical).
+    *   **Important Note on Pixel-Data Hashing:** This method identifies images with *bit-for-bit identical pixel data*. It is very effective for finding exact duplicates where only metadata might have changed. However, it will **not** identify images as duplicates if they have been resized, re-encoded (e.g., saving a PNG as a JPG), or undergone even minor visual edits, as these operations alter the raw pixel data.
+3.  **Full File Content Hashing (Fallback for Images):** If pixel-data hashing is unsupported for one or both image types, or if an error occurs that prevents pixel hashing (and it's not due to one file being unsupported after the other was successfully hashed or also unsupported), the tool falls back to calculating a SHA-256 hash of the entire file content. If these full file hashes match, they are considered duplicates.
 
-2.  **EXIF Data Signature (for images):**
-    *   If file sizes match and the files are identified as image formats that typically contain EXIF data (e.g., JPEG, some RAW types), the application attempts to generate and compare a signature.
-    *   This signature is created from a combination of key EXIF tags, such as `DateTimeOriginal` (creation timestamp), `Make` and `Model` (camera information), and `ImageWidth` and `ImageHeight` (dimensions).
-    *   If these generated signatures differ, the files are considered non-duplicates. This step helps differentiate images taken at different times or with different cameras/settings even if their content or size might coincidentally be similar.
-    *   This step is skipped if EXIF data is not available, not supported for the file type, or if the files are not images.
+**For Non-Image or Mixed-Type Comparisons:**
+If one or both files are not identified as image types:
+1.  **File Size Comparison:** The files are first compared by size. If their sizes differ, they are immediately considered non-duplicates.
+2.  **Full File Content Hashing:** If the file sizes are identical, the tool calculates a SHA-256 hash of the entire file content. If these hashes match, the files are considered duplicates.
 
-3.  **Pixel-Data Hashing (Primary for images):**
-    *   If the above checks are inconclusive or passed (e.g., same size, same EXIF signature, or EXIF not applicable), the tool proceeds to pixel-data hashing for supported image formats (like JPEG, PNG, GIF).
-    *   A SHA-256 hash of the raw pixel data is calculated, deliberately ignoring metadata. This allows the tool to identify images that are visually identical, even if their metadata (like tags, comments, or modification dates) differs.
-    *   If pixel hashes match, the files are considered visual duplicates.
-
-4.  **Full File Content Hashing (Fallback/General):**
-    *   This is the final stage of comparison and acts as a fallback. It's used for:
-        *   Non-image files.
-        *   Image files where pixel-data hashing is not supported or failed (e.g., certain RAW formats, corrupted images).
-        *   Image files whose pixel-data hashes matched. In this case, a full file hash acts as a definitive confirmation, ensuring that not just the visual data but the entire file (including all metadata) is identical.
-    *   A SHA-256 hash of the entire file content is calculated and compared.
-
-This layered strategy ensures that computationally expensive hashing is only performed when necessary, making the duplicate detection process more efficient.
+This layered strategy ensures that computationally expensive hashing is only performed when necessary.
 
 **Duplicate Resolution:**
--   If multiple files are identified as duplicates based on their **pixel-data hash**, the tool attempts to keep the version with the highest image resolution (calculated as width * height from image dimensions).
--   If duplicates are identified by **EXIF signature mismatch** (this flags them as non-duplicates early), **full file hash**, or if image resolution cannot be determined for pixel-data duplicates, the first version of the file encountered and selected for copying is typically kept.
+-   If two images are identified as duplicates based on their **pixel-data hash** (meaning their raw pixel data is identical), the tool attempts to keep the version with the highest image resolution (calculated as width * height from image dimensions). This is most relevant if two files have identical pixel streams but, for example, different EXIF metadata reporting different dimensions.
+-   For any duplicates identified by **full file hash** (either for non-images, or as a fallback for images), or if image resolution cannot be determined for pixel-data duplicates, the first version of the file encountered and selected for copying is typically kept.
+-   If a source file is found to be a higher-resolution pixel-data duplicate of a file already in the target directory, the source file is copied (typically with a versioned name if the base name is the same), and the report will indicate that the existing target file is superseded.
 
 **Reporting:**
 A detailed report named `report.txt` is generated in the root of the target directory. This report lists:

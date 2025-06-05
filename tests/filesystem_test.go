@@ -29,6 +29,173 @@ func createScanTestDir(t *testing.T, baseDir string, structure map[string][]byte
 	}
 }
 
+func TestIsImageExtension(t *testing.T) {
+	tests := []struct {
+		name     string
+		filePath string
+		expected bool
+	}{
+		{"jpeg extension", "photo.jpeg", true},
+		{"jpg extension", "photo.jpg", true},
+		{"JPG extension (uppercase)", "photo.JPG", true},
+		{"png extension", "photo.png", true},
+		{"gif extension", "photo.gif", true},
+		{"raw extension", "photo.raw", true},
+		{"cr2 extension", "photo.cr2", true},
+		{"nef extension", "photo.nef", true},
+		{"arw extension", "photo.arw", true},
+		{"orf extension", "photo.orf", true},
+		{"rw2 extension", "photo.rw2", true},
+		{"pef extension", "photo.pef", true},
+		{"dng extension", "photo.dng", true},
+		{"txt extension", "document.txt", false},
+		{"no extension", "filewithnoextension", false},
+		{"empty extension", "file.", false},
+		{"unknown image extension", "photo.unknown", false},
+		{"path with multiple dots", "archive.tar.gz", false}, // assuming .gz is not in imageExtensions
+		{"hidden file with image ext", ".hiddenphoto.jpg", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := pkg.IsImageExtension(tt.filePath)
+			if actual != tt.expected {
+				t.Errorf("IsImageExtension(%q) got %v, want %v", tt.filePath, actual, tt.expected)
+			}
+		})
+	}
+}
+
+func TestFindPotentialTargetConflicts(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Structure for files to create in the temp directory
+	// map[filename]content (content is irrelevant, just existence)
+	filesToCreate := map[string][]byte{
+		"image.jpg":         []byte("data"),
+		"image.JPG":         []byte("data"), // Case variation
+		"image-1.jpg":       []byte("data"),
+		"image-123.jpg":     []byte("data"),
+		"image-other.jpg":   []byte("data"), // Should not match (non-numeric version)
+		"image.png":         []byte("data"), // Different extension
+		"prefiximage.jpg":   []byte("data"), // Different prefix
+		"image-1.jpeg":      []byte("data"), // Different extension for versioned file
+		"image-abc.jpg":     []byte("data"), // Non-numeric version part
+		"image-.jpg":        []byte("data"), // Invalid version part
+		"image-1-extra.jpg": []byte("data"), // Invalid version part
+	}
+
+	for name, data := range filesToCreate {
+		filePath := filepath.Join(tmpDir, name)
+		if err := os.WriteFile(filePath, data, 0644); err != nil {
+			t.Fatalf("Failed to create test file %s: %v", name, err)
+		}
+	}
+
+	tests := []struct {
+		name                string
+		targetMonthDir      string
+		baseNameWithoutExt  string
+		extension           string
+		expectedConflicts   []string // Paths relative to targetMonthDir
+		expectedErrContains string   // Substring of expected error, if any
+	}{
+		{
+			name:               "no conflicts in empty directory",
+			targetMonthDir:     t.TempDir(), // A fresh empty directory
+			baseNameWithoutExt: "photo",
+			extension:          ".jpg",
+			expectedConflicts:  []string{},
+		},
+		{
+			name:               "non-existent directory",
+			targetMonthDir:     filepath.Join(tmpDir, "non_existent_subdir"),
+			baseNameWithoutExt: "photo",
+			extension:          ".jpg",
+			expectedConflicts:  []string{}, // Should return empty list, nil error
+		},
+		{
+			name:               "exact match, versioned matches, and case variation",
+			targetMonthDir:     tmpDir,
+			baseNameWithoutExt: "image",
+			extension:          ".jpg",
+			expectedConflicts:  []string{"image.jpg", "image.JPG", "image-1.jpg", "image-123.jpg"},
+		},
+		{
+			name:               "match with different extension case in input",
+			targetMonthDir:     tmpDir,
+			baseNameWithoutExt: "image",
+			extension:          ".JPG", // Input extension is uppercase
+			expectedConflicts:  []string{"image.jpg", "image.JPG", "image-1.jpg", "image-123.jpg"},
+		},
+		{
+			name:               "no matches due to different base name",
+			targetMonthDir:     tmpDir,
+			baseNameWithoutExt: "photo",
+			extension:          ".jpg",
+			expectedConflicts:  []string{},
+		},
+		{
+			name:               "no matches due to different extension",
+			targetMonthDir:     tmpDir,
+			baseNameWithoutExt: "image",
+			extension:          ".png",
+			expectedConflicts:  []string{"image.png"},
+		},
+		{
+			name:               "only base match, no versioned matches for different extension",
+			targetMonthDir:     tmpDir,
+			baseNameWithoutExt: "image",
+			extension:          ".jpeg", // expecting image-1.jpeg
+			expectedConflicts:  []string{"image-1.jpeg"},
+		},
+		{
+			name:               "extension without dot",
+			targetMonthDir:     tmpDir,
+			baseNameWithoutExt: "image",
+			extension:          "jpg", // Input extension without dot
+			expectedConflicts:  []string{"image.jpg", "image.JPG", "image-1.jpg", "image-123.jpg"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results, err := pkg.FindPotentialTargetConflicts(tt.targetMonthDir, tt.baseNameWithoutExt, tt.extension)
+
+			if tt.expectedErrContains != "" {
+				if err == nil {
+					t.Errorf("Expected error containing '%s', but got nil", tt.expectedErrContains)
+				} else if !strings.Contains(err.Error(), tt.expectedErrContains) {
+					t.Errorf("Error '%v' does not contain expected string '%s'", err, tt.expectedErrContains)
+				}
+				return // Don't check results if error was expected
+			}
+			if err != nil {
+				t.Fatalf("FindPotentialTargetConflicts() returned unexpected error: %v", err)
+			}
+
+			// Normalize expected paths and sort for comparison
+			expectedFullPaths := make([]string, len(tt.expectedConflicts))
+			for i, fName := range tt.expectedConflicts {
+				expectedFullPaths[i] = filepath.Join(tt.targetMonthDir, fName)
+			}
+			sort.Strings(expectedFullPaths)
+			sort.Strings(results)
+
+			// Use length check for empty slices, DeepEqual for non-empty.
+			if len(expectedFullPaths) == 0 {
+				if len(results) != 0 {
+					t.Errorf("FindPotentialTargetConflicts()\n  got: %v\n want empty slice", results)
+				}
+			} else {
+				if !reflect.DeepEqual(results, expectedFullPaths) {
+					t.Errorf("FindPotentialTargetConflicts()\n  got: %v\n want: %v", results, expectedFullPaths)
+				}
+			}
+		})
+	}
+}
+
 func TestScanSourceDirectory(t *testing.T) {
 	tests := []struct {
 		name          string
