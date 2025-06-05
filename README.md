@@ -1,7 +1,7 @@
 # Photo Sorter
 
 ## Overview
-Photo Sorter is a command-line tool written in Go to help you organize your photo library. It copies photos from a source directory, sorts them into a new directory structure based on their creation date (YYYY/MM), and identifies duplicate files.
+Photo Sorter is a command-line tool written in Go to help you organize your photo library. It scans photos from a source directory, identifies unique files or preferred versions by detecting and resolving duplicates, and then copies these selected files into a new, sorted directory structure based on their creation date (YYYY/MM).
 
 ## Features
 - **Date-Based Sorting:** Organizes photos into `YYYY/MM` folders based on EXIF creation date, falling back to file modification time if EXIF date is unavailable. Photos will be renamed to the format `YYYY-MM-DD-HHMMSS(-v).<original_extension>` (e.g., `2023-10-27-153000.jpg` or `2023-10-27-153000-1.jpg` if a conflict occurs).
@@ -18,10 +18,35 @@ Photo Sorter is a command-line tool written in Go to help you organize your phot
 - Go (version 1.21 or later) is required to build the tool from source.
 
 ## Dependencies
-This project uses the `goexif` library to extract EXIF data from images.
-- **goexif**: [https://github.com/rwcarlsen/goexif](https://github.com/rwcarlsen/goexif)
-  - Authors: Robert Carlsen & Contributors
+
+This project relies on the following Go modules:
+
+### Direct Dependencies
+- **goexif**: `github.com/rwcarlsen/goexif`
+  - Purpose: Used to extract EXIF data from image files.
   - License: BSD 2-Clause "Simplified" License
+  - Copyright: Copyright (c) 2012, Robert Carlsen & Contributors
+
+### Indirect Dependencies
+These libraries are included by the direct dependencies or by the testing framework. While not directly imported by the application's core logic, they are part of the overall project build and test environment.
+- **go-spew**: `github.com/davecgh/go-spew`
+  - Purpose: Used for deep pretty printing of Go data structures (often for debugging, likely pulled in by a testing dependency).
+  - License: ISC License
+  - Copyright: Copyright (c) 2012-2016 Dave Collins <dave@davec.name>
+- **go-difflib**: `github.com/pmezard/go-difflib`
+  - Purpose: Provides data comparison utilities (likely pulled in by a testing dependency for diffing text).
+  - License: BSD 3-Clause License
+  - Copyright: Copyright (c) 2013, Patrick Mezard
+- **testify**: `github.com/stretchr/testify`
+  - Purpose: A set of packages that provide common assertions and tools for Go tests.
+  - License: MIT License
+  - Copyright: Copyright (c) 2012-2020 Mat Ryer, Tyler Bunnell and contributors
+- **yaml.v3**: `gopkg.in/yaml.v3` (Source: `github.com/go-yaml/yaml/tree/v3`)
+  - Purpose: YAML support for Go (likely pulled in by a testing or utility dependency).
+  - License: MIT License and Apache License 2.0
+  - Copyright: Copyright (c) 2006-2010 Kirill Simonov (MIT portions), Copyright (c) 2011-2019 Canonical Ltd (Apache portions)
+
+Please refer to the respective repositories for full license texts.
 
 ## Building from Source
 1. Clone the repository:
@@ -58,7 +83,7 @@ Or on Windows:
 * `-targetDir`: (Required) The base directory where the sorted photos will be copied. Photos will be organized into `YYYY/MM` subfolders within this directory.
 
 ## Duplicate Handling and Report
-The tool uses an enhanced multi-stage approach to efficiently identify duplicate files:
+The core logic of Photo Sorter involves first thoroughly comparing all processable files from the source directory to identify duplicates. Only files determined to be unique, or the preferred version in a set of duplicates (e.g., highest resolution), are then selected for the actual copy operation. This ensures that the target directory is populated efficiently without redundant files. The tool uses an enhanced multi-stage approach for this identification process:
 
 1.  **File Size Comparison:**
     *   The first and quickest check. Files with different sizes are immediately considered non-duplicates. This avoids unnecessary processing for obviously different files.
