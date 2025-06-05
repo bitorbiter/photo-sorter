@@ -14,7 +14,7 @@ type DuplicateInfo struct {
 }
 
 // GenerateReport creates a text report summarizing the sorting process.
-func GenerateReport(reportPath string, duplicates []DuplicateInfo, copiedFilesCount int, processedFilesCount int, filesToCopyCount int) error {
+func GenerateReport(reportPath string, duplicates []DuplicateInfo, copiedFilesCount int, processedFilesCount int, filesToCopyCount int, pixelHashUnsupportedCount int) error {
 	// Ensure the directory for the report exists
 	reportDir := filepath.Dir(reportPath)
 	if err := os.MkdirAll(reportDir, 0755); err != nil {
@@ -52,6 +52,10 @@ func GenerateReport(reportPath string, duplicates []DuplicateInfo, copiedFilesCo
 		return err
 	}
 	_, err = fmt.Fprintf(file, "  - Duplicate files found and discarded/skipped: %d\n", len(duplicates))
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(file, "  - Files where pixel hashing was not supported (fallback to file hash): %d\n", pixelHashUnsupportedCount)
 	if err != nil {
 		return err
 	}

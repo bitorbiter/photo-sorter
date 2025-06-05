@@ -12,6 +12,9 @@ import (
 	"os"
 )
 
+// ErrUnsupportedForPixelHashing is returned when a file format is not supported for pixel data hashing.
+var ErrUnsupportedForPixelHashing = fmt.Errorf("file format not supported for pixel data hashing")
+
 // CalculateFileHash calculates the SHA-256 hash of a file's content.
 func CalculateFileHash(filePath string) (string, error) {
 	file, err := os.Open(filePath)
@@ -45,4 +48,42 @@ func GetImageResolution(filePath string) (width int, height int, err error) {
 	}
 
 	return config.Width, config.Height, nil
+}
+
+// CalculatePixelDataHash calculates the SHA-256 hash of an image's raw pixel data.
+// It supports JPEG, PNG, and GIF formats.
+func CalculatePixelDataHash(filePath string) (string, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to open file %s for pixel hashing: %w", filePath, err)
+	}
+	defer file.Close()
+
+	img, _, err := image.Decode(file)
+	if err != nil {
+		// This can happen for unsupported formats or corrupted image data.
+		return "", fmt.Errorf("%w: %v", ErrUnsupportedForPixelHashing, err)
+	}
+
+	hasher := sha256.New()
+	bounds := img.Bounds()
+	pixelBytes := make([]byte, 4) // For R, G, B, A components
+
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, a := img.At(x, y).RGBA() // uint32 values (0-0xFFFF)
+
+			// Convert to uint8 (0-0xFF) for consistent hashing
+			pixelBytes[0] = byte(r >> 8)
+			pixelBytes[1] = byte(g >> 8)
+			pixelBytes[2] = byte(b >> 8)
+			pixelBytes[3] = byte(a >> 8)
+
+			if _, err := hasher.Write(pixelBytes); err != nil {
+				return "", fmt.Errorf("failed to write pixel data to hasher for %s: %w", filePath, err)
+			}
+		}
+	}
+
+	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
