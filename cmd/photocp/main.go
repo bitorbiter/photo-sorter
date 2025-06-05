@@ -42,6 +42,20 @@ func runApplicationLogic(sourceDir string, targetBaseDir string) (processedFiles
 	// pixelHashUnsupportedCounter is also a return value
 	filesSelectedForCopy := []FileInfo{}      // Holds FileInfo for files to be copied eventually.
 	// duplicateReportEntries is also a return value
+	sourceFilesThatUsedFileHash := make(map[string]bool) // For accurate pixelHashUnsupported count
+
+	// --- Target Directory Validation ---
+	// Ensure targetBaseDir exists or can be created.
+	// This is crucial before any processing, especially before FindPotentialTargetConflicts.
+	if _, err := os.Stat(targetBaseDir); os.IsNotExist(err) {
+		fmt.Printf("Target directory %s does not exist, attempting to create it.\n", targetBaseDir)
+		if err := os.MkdirAll(targetBaseDir, 0755); err != nil {
+			return 0, 0, 0, nil, 0, fmt.Errorf("failed to create target base directory '%s': %w", targetBaseDir, err)
+		}
+	} else if err != nil {
+		return 0, 0, 0, nil, 0, fmt.Errorf("error accessing target base directory '%s': %w", targetBaseDir, err)
+	}
+
 
 	// --- Scanning ---
 	fmt.Printf("Scanning source directory: %s\n", sourceDir)
@@ -72,93 +86,271 @@ func runApplicationLogic(sourceDir string, targetBaseDir string) (processedFiles
 	for _, currentSourceFilepath := range imageFiles {
 		fmt.Printf("\nProcessing: %s\n", currentSourceFilepath)
 
+		// 1.a Determine photoDate and dateSource
+		var photoDate time.Time
+		var dateSource string
+		exifDate, dateErr := pkg.GetPhotoCreationDate(currentSourceFilepath)
+		if dateErr == nil {
+			photoDate = exifDate
+			dateSource = "EXIF"
+		} else {
+			// Fallback to file modification time
+			fileInfoStat, statErr := os.Stat(currentSourceFilepath)
+			if statErr != nil {
+				log.Printf("  - Error getting file info for %s: %v. Skipping this file.\n", currentSourceFilepath, statErr)
+				continue // Skip this source file
+			}
+			photoDate = fileInfoStat.ModTime()
+			dateSource = "FileModTime"
+		}
+		fmt.Printf("  - Determined date (%s): %s\n", dateSource, photoDate.Format("2006-01-02 15:04:05"))
+
+		// 1.b Determine potentialTargetMonthDir
+		potentialTargetMonthDir, err := pkg.CreateTargetDirectory(targetBaseDir, photoDate)
+		if err != nil {
+			log.Printf("  - Error creating/accessing target month directory for %s (date: %s): %v. Skipping.\n", currentSourceFilepath, photoDate, err)
+			continue
+		}
+
+		// 1.c Determine base target filename
+		originalExtension := filepath.Ext(currentSourceFilepath)
+		baseNameWithoutExt := photoDate.In(time.UTC).Format("2006-01-02-150405")
+		// newBaseTargetFileName := baseNameWithoutExt + originalExtension // Used later for report
+
+
 		currentWidth, currentHeight, errRes := pkg.GetImageResolution(currentSourceFilepath)
 		if errRes != nil {
-			// For non-image files or images where resolution cannot be determined,
-			// log a warning but proceed with Width=0, Height=0.
-			// These files will be processed using full file hash if they are not images,
-			// or if they are images but this step failed.
 			log.Printf("  - Warning: Could not get resolution for %s: %v. Proceeding with 0x0 resolution.\n", currentSourceFilepath, errRes)
 			currentWidth = 0
 			currentHeight = 0
 		} else {
 			fmt.Printf("  - Resolution: %dx%d\n", currentWidth, currentHeight)
 		}
+		currentSourceInfo := FileInfo{Path: currentSourceFilepath, Width: currentWidth, Height: currentHeight}
 
-		currentSourceInfo := FileInfo{
-			Path:   currentSourceFilepath,
-			Width:  currentWidth,
-			Height: currentHeight,
+
+		// 2. Check Against Existing Target Files
+		isDuplicateOfTargetFile := false
+		sourceFileIsBetterDuplicate := false
+		// targetFileToSupersede := "" // Path of the target file that would be superseded.
+
+		// 2.a Scan potentialTargetMonthDir for conflicts
+		fmt.Printf("  - Checking for existing files in target: %s (base: %s, ext: %s)\n", potentialTargetMonthDir, baseNameWithoutExt, originalExtension)
+		existingTargetCandidates, errFind := pkg.FindPotentialTargetConflicts(potentialTargetMonthDir, baseNameWithoutExt, originalExtension)
+		if errFind != nil {
+			log.Printf("  - Error scanning for target conflicts for %s: %v. Assuming no conflicts.\n", currentSourceFilepath, errFind)
 		}
 
-		isDuplicateOfExisting := false
-		shouldReplaceExistingSelected := false
-		indexOfExistingToReplace := -1
-		reasonForReplacement := ""
-
-		for idx, existingSelectedInfo := range filesSelectedForCopy {
-			fmt.Printf("  - Comparing with selected file: %s\n", existingSelectedInfo.Path)
-			compResult, errComp := pkg.AreFilesPotentiallyDuplicate(currentSourceInfo.Path, existingSelectedInfo.Path)
-
+		// 2.c Loop through existingTargetCandidates
+		for _, targetCandidatePath := range existingTargetCandidates {
+			fmt.Printf("    - Comparing source %s with target candidate %s\n", currentSourceFilepath, targetCandidatePath)
+			compResult, errComp := pkg.AreFilesPotentiallyDuplicate(currentSourceFilepath, targetCandidatePath)
 			if errComp != nil {
-				log.Printf("    - Error comparing %s and %s: %v. Treating as non-duplicate for this pair.\n", currentSourceInfo.Path, existingSelectedInfo.Path, errComp)
+				log.Printf("      - Error comparing source %s with target %s: %v. Skipping this target candidate.\n", currentSourceFilepath, targetCandidatePath, errComp)
+				if compResult.HashType == pkg.HashTypeFile && pkg.IsImageExtension(currentSourceFilepath) {
+					sourceFilesThatUsedFileHash[currentSourceFilepath] = true
+				}
 				continue
 			}
-
-			if compResult.HashType == pkg.HashTypeFile {
-				ext := strings.ToLower(filepath.Ext(currentSourceInfo.Path))
-				if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" {
-					// This file is an image type but was processed using full file hash.
-					// This implies pixel hashing was not applicable or failed.
-					pixelHashUnsupported++
-				}
+			if compResult.HashType == pkg.HashTypeFile && pkg.IsImageExtension(currentSourceFilepath) {
+				sourceFilesThatUsedFileHash[currentSourceFilepath] = true
 			}
 
 			if compResult.AreDuplicates {
-				isDuplicateOfExisting = true
+				isDuplicateOfTargetFile = true
+				fmt.Printf("      - Duplicate found: Source %s and Target %s. Reason: %s\n", currentSourceFilepath, targetCandidatePath, compResult.Reason)
 
 				if compResult.Reason == pkg.ReasonPixelHashMatch {
-					fmt.Printf("    - Pixel hash match with %s.\n", existingSelectedInfo.Path)
-					if currentSourceInfo.Width*currentSourceInfo.Height > existingSelectedInfo.Width*existingSelectedInfo.Height {
-						fmt.Printf("    - Current file %s (%dx%d) is better resolution than selected %s (%dx%d).\n",
-							currentSourceInfo.Path, currentSourceInfo.Width, currentSourceInfo.Height,
-							existingSelectedInfo.Path, existingSelectedInfo.Width, existingSelectedInfo.Height)
-
-						if !shouldReplaceExistingSelected || (currentSourceInfo.Width*currentSourceInfo.Height > filesSelectedForCopy[indexOfExistingToReplace].Width*filesSelectedForCopy[indexOfExistingToReplace].Height) {
-							shouldReplaceExistingSelected = true
-							indexOfExistingToReplace = idx
-							reasonForReplacement = fmt.Sprintf("%s (current %s has better resolution than %s)", compResult.Reason, currentSourceInfo.Path, existingSelectedInfo.Path)
+					targetCandidateWidth, targetCandidateHeight, errResTarget := pkg.GetImageResolution(targetCandidatePath)
+					if errResTarget != nil {
+						log.Printf("      - Warning: Could not get resolution for target %s: %v. Assuming target is not better.\n", targetCandidatePath, errResTarget)
+						if currentSourceInfo.Width*currentSourceInfo.Height > 0 {
+							sourceFileIsBetterDuplicate = true
+							duplicates = append(duplicates, pkg.DuplicateInfo{
+								KeptFile:      currentSourceInfo.Path,
+								DiscardedFile: targetCandidatePath,
+								Reason:        compResult.Reason + " (source is better resolution than existing target, target resolution unknown)",
+							})
+							fmt.Printf("      - Source %s is considered better than target %s (target resolution error).\n", currentSourceFilepath, targetCandidatePath)
+							break
+						} else {
+							duplicates = append(duplicates, pkg.DuplicateInfo{KeptFile: targetCandidatePath, DiscardedFile: currentSourceFilepath, Reason: compResult.Reason + " (existing target kept - resolution error for both or source)"})
+							fmt.Printf("      - Target %s kept (pixel hash match, resolution error for source/both).\n", targetCandidatePath)
+							goto nextSourceFileIteration
 						}
+					}
+
+					if currentSourceInfo.Width*currentSourceInfo.Height > targetCandidateWidth*targetCandidateHeight {
+						sourceFileIsBetterDuplicate = true
+						duplicates = append(duplicates, pkg.DuplicateInfo{
+							KeptFile:      currentSourceInfo.Path,
+							DiscardedFile: targetCandidatePath,
+							Reason:        compResult.Reason + " (source is better resolution than existing target)",
+						})
+						fmt.Printf("      - Source %s (%dx%d) is better resolution than target %s (%dx%d).\n", currentSourceFilepath, currentSourceInfo.Width, currentSourceInfo.Height, targetCandidatePath, targetCandidateWidth, targetCandidateHeight)
+						break
 					} else {
-						fmt.Printf("    - Existing selected file %s (%dx%d) is better or same resolution as current %s (%dx%d).\n",
-							existingSelectedInfo.Path, existingSelectedInfo.Width, existingSelectedInfo.Height,
-							currentSourceInfo.Path, currentSourceInfo.Width, currentSourceInfo.Height)
-						duplicates = append(duplicates, pkg.DuplicateInfo{KeptFile: existingSelectedInfo.Path, DiscardedFile: currentSourceInfo.Path, Reason: compResult.Reason + " (existing kept - resolution)"})
+						duplicates = append(duplicates, pkg.DuplicateInfo{KeptFile: targetCandidatePath, DiscardedFile: currentSourceFilepath, Reason: compResult.Reason + " (existing target kept - resolution)"})
+						fmt.Printf("      - Target %s (%dx%d) is better or same resolution as source %s (%dx%d).\n", targetCandidatePath, targetCandidateWidth, targetCandidateHeight, currentSourceFilepath, currentSourceInfo.Width, currentSourceInfo.Height)
 						goto nextSourceFileIteration
 					}
 				} else {
-					fmt.Printf("    - Duplicate (Reason: %s) with %s. Keeping existing selected file.\n", compResult.Reason, existingSelectedInfo.Path)
-					duplicates = append(duplicates, pkg.DuplicateInfo{KeptFile: existingSelectedInfo.Path, DiscardedFile: currentSourceInfo.Path, Reason: compResult.Reason})
+					// No need to check compResult.HashTypeSource, already done for sourceFilesThatUsedFileHash
+					duplicates = append(duplicates, pkg.DuplicateInfo{KeptFile: targetCandidatePath, DiscardedFile: currentSourceFilepath, Reason: compResult.Reason})
+					fmt.Printf("      - Target %s kept (reason: %s).\n", targetCandidatePath, compResult.Reason)
 					goto nextSourceFileIteration
 				}
 			}
 		}
 
-		if shouldReplaceExistingSelected {
-			discardedInfo := filesSelectedForCopy[indexOfExistingToReplace]
-			duplicates = append(duplicates, pkg.DuplicateInfo{KeptFile: currentSourceInfo.Path, DiscardedFile: discardedInfo.Path, Reason: reasonForReplacement})
-			filesSelectedForCopy[indexOfExistingToReplace] = currentSourceInfo
-			fmt.Printf("  - Marked for replacement: %s will replace %s (Reason: %s)\n", currentSourceInfo.Path, discardedInfo.Path, reasonForReplacement)
-		} else if !isDuplicateOfExisting {
-			filesSelectedForCopy = append(filesSelectedForCopy, currentSourceInfo)
-			fmt.Printf("  - Marked for copy: %s (unique so far)\n", currentSourceInfo.Path)
+		// 3. Check Against `filesSelectedForCopy` (Existing Logic - Adapt as Needed)
+		// This happens if !isDuplicateOfTargetFile OR if sourceFileIsBetterDuplicate
+		if !isDuplicateOfTargetFile || sourceFileIsBetterDuplicate {
+			isDuplicateOfSelected := false
+			shouldReplaceExistingSelected := false
+			indexOfExistingToReplace := -1
+			reasonForReplacement := ""
+
+			for idx, existingSelectedInfo := range filesSelectedForCopy {
+				fmt.Printf("  - Comparing with already selected file for copy: %s\n", existingSelectedInfo.Path)
+				compResult, errComp := pkg.AreFilesPotentiallyDuplicate(currentSourceInfo.Path, existingSelectedInfo.Path)
+
+				if errComp != nil {
+					log.Printf("    - Error comparing %s and %s: %v. Treating as non-duplicate for this pair.\n", currentSourceInfo.Path, existingSelectedInfo.Path, errComp)
+					if compResult.HashType == pkg.HashTypeFile && pkg.IsImageExtension(currentSourceInfo.Path) {
+						sourceFilesThatUsedFileHash[currentSourceInfo.Path] = true
+					}
+					continue
+				}
+				if compResult.HashType == pkg.HashTypeFile && pkg.IsImageExtension(currentSourceInfo.Path) {
+					sourceFilesThatUsedFileHash[currentSourceInfo.Path] = true
+				}
+
+				if compResult.AreDuplicates {
+					if compResult.Reason == pkg.ReasonPixelHashMatch {
+						fmt.Printf("    - Pixel hash match with selected %s.\n", existingSelectedInfo.Path)
+						if currentSourceInfo.Width*currentSourceInfo.Height > existingSelectedInfo.Width*existingSelectedInfo.Height {
+							fmt.Printf("    - Current file %s (%dx%d) is better resolution than selected %s (%dx%d).\n",
+								currentSourceInfo.Path, currentSourceInfo.Width, currentSourceInfo.Height,
+								existingSelectedInfo.Path, existingSelectedInfo.Width, existingSelectedInfo.Height)
+							if !shouldReplaceExistingSelected || (currentSourceInfo.Width*currentSourceInfo.Height > filesSelectedForCopy[indexOfExistingToReplace].Width*filesSelectedForCopy[indexOfExistingToReplace].Height) {
+								shouldReplaceExistingSelected = true
+								indexOfExistingToReplace = idx
+								reasonForReplacement = fmt.Sprintf("%s (current '%s' has better resolution than previously selected '%s')", compResult.Reason, filepath.Base(currentSourceInfo.Path), filepath.Base(existingSelectedInfo.Path))
+							}
+						} else {
+							fmt.Printf("    - Existing selected file %s (%dx%d) is better or same resolution as current %s (%dx%d).\n",
+								existingSelectedInfo.Path, existingSelectedInfo.Width, existingSelectedInfo.Height,
+								currentSourceInfo.Path, currentSourceInfo.Width, currentSourceInfo.Height)
+							duplicates = append(duplicates, pkg.DuplicateInfo{KeptFile: existingSelectedInfo.Path, DiscardedFile: currentSourceInfo.Path, Reason: compResult.Reason + " (already selected kept - resolution)"})
+							goto nextSourceFileIteration
+						}
+					} else { // Other duplicate type like file hash
+						// if compResult.HashTypeSource == pkg.HashTypeFile && pkg.IsImageExtension(currentSourceInfo.Path) {
+						// pixelHashUnsupported++ // Potentially overcounting
+						// }
+						fmt.Printf("    - Duplicate (Reason: %s) with selected %s. Keeping existing selected file.\n", compResult.Reason, existingSelectedInfo.Path)
+						duplicates = append(duplicates, pkg.DuplicateInfo{KeptFile: existingSelectedInfo.Path, DiscardedFile: currentSourceInfo.Path, Reason: compResult.Reason})
+						goto nextSourceFileIteration
+					}
+				}
+			}
+
+			if shouldReplaceExistingSelected {
+				discardedInfo := filesSelectedForCopy[indexOfExistingToReplace]
+				// Update duplicate report: KeptFile is currentSourceInfo.Path (its final target name will be determined at copy time)
+				// DiscardedFile is the one it replaces from the filesSelectedForCopy list.
+				duplicates = append(duplicates, pkg.DuplicateInfo{KeptFile: currentSourceInfo.Path, DiscardedFile: discardedInfo.Path, Reason: reasonForReplacement})
+				filesSelectedForCopy[indexOfExistingToReplace] = currentSourceInfo
+				fmt.Printf("  - Marked for replacement in selection list: %s will replace %s (Reason: %s)\n", currentSourceInfo.Path, discardedInfo.Path, reasonForReplacement)
+			} else if !isDuplicateOfSelected {
+				filesSelectedForCopy = append(filesSelectedForCopy, currentSourceInfo)
+				fmt.Printf("  - Marked for copy: %s (unique or better than target, and unique among selected)\n", currentSourceInfo.Path)
+			}
 		}
+
+		// Determine if pixelHashUnsupported should be incremented for currentSourceFilepath
+		// This is tricky because it depends on the *final* outcome of comparisons for this file.
+		// A simpler approach: if a file is an image, and it's added to filesSelectedForCopy,
+		// and its comparison (if any occurred leading to its selection over another image)
+		// was ultimately based on file hash, then count it.
+		// This is still complex. The `AreFilesPotentiallyDuplicate` pkg function now returns HashTypeSource and HashTypeTarget.
+		// We can inspect these.
+		// The current `pixelHashUnsupported++` calls after `AreFilesPotentiallyDuplicate` are okay if they refer to `compResult.HashTypeSource`.
 
 		nextSourceFileIteration:
 	}
 
+	// Consolidate pixelHashUnsupported counting.
+	// This is difficult to do accurately without knowing which comparison was "definitive" for a file.
+	// The current per-comparison incrementing inside the loop is likely the most practical if a bit noisy.
+	// Let's ensure the increments are correctly placed for `compResult.HashTypeSource`.
+	// The existing `pixelHashUnsupported++` after each `pkg.AreFilesPotentiallyDuplicate` call,
+	// if `compResult.HashTypeSource == pkg.HashTypeFile && pkg.IsImageExtension(currentSourceFilepath)`
+	// is the most direct way, but it might count a single source file multiple times if it's compared multiple times
+	// and uses file hash each time.
+	// A better way: maintain a set of source file paths that used file hash when they are images.
+	// sourceFilesThatUsedFileHash := make(map[string]bool) // This was moved to the top of the function.
+
+	// Re-iterate just for pixelHashUnsupported counting logic based on compResult.HashTypeSource (this is not efficient)
+	// This is too complex. The current incrementing logic for pixelHashUnsupported is likely sufficient for an estimate.
+	// The problem statement asks for "Number of files for which pixel-data hashing was not supported (and therefore used full file content hashing)."
+	// This implies a per-source-file count.
+	// The current implementation with `pixelHashUnsupported++` inside the loops when `HashTypeSource` is `HashTypeFile` for an image
+	// will count *comparisons* not *files*.
+	//
+	// Correct approach for pixelHashUnsupported:
+	// Iterate `imageFiles`. For each, if it's an image, simulate its path through the decision logic.
+	// If its *final* comparison type (that determined its fate or lack of duplication) was FileHash, increment.
+	// This is too much of a refactor for this step.
+	// I will leave the `pixelHashUnsupported` logic as is (incrementing on `compResult.HashTypeSource`)
+	// and acknowledge it might count comparisons rather than unique files.
+	// Or, use the `sourceFilesUsingFileHash` map approach.
+
+	// Let's try the map approach for more accurate `pixelHashUnsupported`
+	// This map will be populated during the main loop if a source image file used file hash.
+	// The `pixelHashUnsupported++` lines need to add to this map instead.
+	// Then, `pixelHashUnsupported = len(sourceFilesUsingFileHash)`.
+	// This change will be done in the next iteration if this one is too long.
+	// For now, the existing duplicate `pixelHashUnsupported++` calls are removed.
+	// A single point of increment will be added if a file makes it to `filesSelectedForCopy`
+	// and its last comparison was FileHash, OR if it was discarded due to FileHash. This is still complex.
+
+	// Simplification: The `pkg.AreFilesPotentiallyDuplicate` function's `compResult.HashType` field
+	// (renamed to `HashTypeSource` and `HashTypeTarget` in my mental model, but it's just `HashType` in current pkg)
+	// should reflect the source file's hashing method if it was the primary one.
+	// The current `pixelHashUnsupported++` after each call to AreFilesPotentiallyDuplicate, if HashType == File and IsImage, is the specified logic.
+	// I had removed them in the previous diff section, I should ensure they are correctly placed.
+
+	// Correct placement of pixelHashUnsupported increment:
+	// Inside the loops, after `AreFilesPotentiallyDuplicate` returns `compResult`:
+	// if compResult.HashType == pkg.HashTypeFile && pkg.IsImageExtension(currentSourceInfo.Path) {
+	//   // Add to a set to count unique files later
+	//	 sourceFilesThatUsedFileHash[currentSourceInfo.Path] = true
+	// }
+	// Then, after the main loop: pixelHashUnsupported = len(sourceFilesThatUsedFileHash)
+	// This seems like the best way.
+
+	// sourceFilesThatUsedFileHash := make(map[string]bool) // Moved to before the loop
+
+	// The main processing loop (already exists, just showing context for sourceFilesThatUsedFileHash)
+	// for _, currentSourceFilepath := range imageFiles { ...
+	//   ...
+	//   compResult, errComp := pkg.AreFilesPotentiallyDuplicate(...)
+	//   if errComp == nil && compResult.HashType == pkg.HashTypeFile && pkg.IsImageExtension(currentSourceInfo.Path) {
+	//      sourceFilesThatUsedFileHash[currentSourceInfo.Path] = true
+	//   }
+	//   ...
+	// }
+	// After the loop: pixelHashUnsupported = len(sourceFilesThatUsedFileHash)
+	// This change will be applied in the next step as it requires modifying the loop structure already changed.
+	// For now, I'll ensure the `KeptFile` in duplicate reports is correct.
+	pixelHashUnsupported = len(sourceFilesThatUsedFileHash)
+
 
 	fmt.Printf("\n--- Starting Copying Phase ---\nFound %d files to copy.\n", len(filesSelectedForCopy))
+	keptFileSourceToTargetMap := make(map[string]string)
+
 	for _, finalInfoToCopy := range filesSelectedForCopy {
 		fmt.Printf("Preparing to copy selected file: %s\n", finalInfoToCopy.Path)
 		var photoDate time.Time
@@ -190,21 +382,30 @@ func runApplicationLogic(sourceDir string, targetBaseDir string) (processedFiles
 
 		originalExtension := filepath.Ext(finalInfoToCopy.Path)
 		baseName := photoDate.In(time.UTC).Format("2006-01-02-150405")
-		newFileName := fmt.Sprintf("%s%s", baseName, originalExtension)
-		destPath := filepath.Join(targetMonthDir, newFileName)
 
+		// Determine the final destination path, handling versioning
+		newFileName := baseName + originalExtension
+		destPath := filepath.Join(targetMonthDir, newFileName)
 		version := 1
-		originalDestPathForLog := destPath
+		originalDestPathForLog := destPath // Store the initial non-versioned path for logging
+
+		// Check for existing files (both original and versioned ones)
+		// This re-checks, which is good for robustness, especially if new files appeared.
 		for {
-			if _, statErr := os.Stat(destPath); os.IsNotExist(statErr) {
-				if destPath != originalDestPathForLog {
-					fmt.Printf("  - Path %s existed. Using versioned name: %s\n", originalDestPathForLog, destPath)
+			_, statErr := os.Stat(destPath)
+			if os.IsNotExist(statErr) {
+				if destPath != originalDestPathForLog && version > 1 { // only log if it's a versioned name different from original
+					fmt.Printf("  - Path %s existed. Using versioned name: %s\n", filepath.Join(targetMonthDir, fmt.Sprintf("%s-%d%s", baseName, version-1, originalExtension)), destPath)
+				} else if destPath != originalDestPathForLog && version == 1 && strings.Contains(originalDestPathForLog, "-0") {
+					// This case is tricky, if original had -0. Unlikely with current naming.
 				}
-				break
+				break // Found an available name
 			} else if statErr != nil {
+				// Serious error checking the destination path (permissions, etc.)
 				log.Printf("  - Error stating file %s: %v. Skipping copy of %s.\n", destPath, statErr, finalInfoToCopy.Path)
-				goto nextFileToCopyLoop
+				goto nextFileToCopyLoop // Skip this file
 			}
+			// File exists, try next version
 			newFileName = fmt.Sprintf("%s-%d%s", baseName, version, originalExtension)
 			destPath = filepath.Join(targetMonthDir, newFileName)
 			version++
@@ -216,9 +417,50 @@ func runApplicationLogic(sourceDir string, targetBaseDir string) (processedFiles
 		} else {
 			fmt.Printf("  - Successfully copied %s to %s\n", finalInfoToCopy.Path, destPath)
 			copiedFiles++
+			keptFileSourceToTargetMap[finalInfoToCopy.Path] = destPath // Store mapping for report update
 		}
 		nextFileToCopyLoop:
 	}
+
+	// Update KeptFile paths in duplicates report
+	for i, dup := range duplicates {
+		// If KeptFile was a source path that got copied, update it to its new target path
+		if targetPath, ok := keptFileSourceToTargetMap[dup.KeptFile]; ok {
+			duplicates[i].KeptFile = targetPath
+		}
+		// If KeptFile was already a target path (e.g. "existing target kept"), it remains as is.
+		// If KeptFile was a source path that got replaced by another source path (which was then copied),
+		// its entry in keptFileSourceToTargetMap would point to the new target path of the replacement.
+		// This logic also handles cases where KeptFile was a placeholder like potentialTargetMonthDir + newBaseTargetFileName
+		// It will be updated if currentSourceFilepath (which matches the placeholder's source intention) is in keptFileSourceToTargetMap.
+		// Example: duplicates = append(duplicates, pkg.DuplicateInfo{KeptFile: filepath.Join(potentialTargetMonthDir, baseNameWithoutExt+originalExtension), ...})
+		// Here, dup.KeptFile is a constructed path. We need to map it based on the source file that *would* have become this.
+		// This part is tricky if the KeptFile in the report is a *predicted* target path.
+		// The current code adds source paths to KeptFile for "source replaces selected" or "source replaces target"
+		// So, this map lookup should work for those cases.
+
+		// A specific check for placeholders used for "source is better than target"
+		// The KeptFile was set to something like: filepath.Join(potentialTargetMonthDir, baseNameWithoutExt+originalExtension)
+		// We need to find which source file this corresponds to.
+		// This requires matching `DiscardedFile` (which is a target path) back to a source file decision.
+		// This is becoming complex. Simpler: if KeptFile is not an absolute path already from target,
+		// and it matches a source path that was copied, update it.
+		// The placeholder `filepath.Join(potentialTargetMonthDir, baseNameWithoutExt+originalExtension)` needs robust handling.
+		// Let's refine the duplicate entry logic: KeptFile should always be the *source path* if the source is kept.
+		// Then this loop correctly updates it to the *final target path*.
+
+		// If a duplicate entry has KeptFile as a placeholder like "targetDir/YYYY/MM/file.ext"
+		// and this placeholder corresponds to a `currentSourceFilepath` that was eventually copied,
+		// we need to update it.
+		// This is implicitly handled if the `KeptFile` was set to `currentSourceFilepath` during the duplicate decision phase
+		// for "source is better" scenarios.
+		// Let's re-check the logic where `duplicates` are added for `sourceFileIsBetterDuplicate`.
+		// `duplicates = append(duplicates, pkg.DuplicateInfo{KeptFile: currentSourceInfo.Path, ...})` is better.
+		// The current code uses: `KeptFile: filepath.Join(potentialTargetMonthDir, baseNameWithoutExt+originalExtension)`
+		// This needs to be `currentSourceInfo.Path` for the map to work.
+		// Assuming this change is made when adding to `duplicates` for "source better than target".
+	}
+
 
 	fmt.Println("\n--- Photo Sorting Process Completed ---")
 	filesToCopy = len(filesSelectedForCopy)
@@ -228,6 +470,7 @@ func runApplicationLogic(sourceDir string, targetBaseDir string) (processedFiles
 	return processedFiles, copiedFiles, filesToCopy, duplicates, pixelHashUnsupported, nil
 }
 
+// This is the main application entry point.
 func main() {
 	// --- Command-line flags ---
 	sourceDirFlag := flag.String("sourceDir", "", "Source directory containing photos to sort (required)")
@@ -287,8 +530,10 @@ func main() {
 	}
 
 	// Call the extracted application logic
-	_, _, _, _, _, appErr := runApplicationLogic(sourceDir, targetBaseDir)
+	processed, copied, filesToCopy, duplicates, pixelHashUnsupported, appErr := runApplicationLogic(sourceDir, targetBaseDir)
 	if appErr != nil {
 		log.Fatalf("Application Error: %v", appErr)
 	}
+	log.Printf("Run Summary: Processed: %d, Copied: %d, Selected To Copy: %d, Duplicates Found: %d, Pixel Hash Unsupported (Unique Files): %d\n",
+		processed, copied, filesToCopy, len(duplicates), pixelHashUnsupported)
 }
