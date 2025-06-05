@@ -72,21 +72,17 @@ func ScanSourceDirectory(sourceDir string) ([]string, error) {
 	return imageFiles, nil
 }
 
-// CreateTargetDirectory creates a directory structure like targetBaseDir/YYYY/MM/DD.
-func CreateTargetDirectory(targetBaseDir string, photoDate time.Time) (string, error) {
-	year := photoDate.Format("2006")
-	month := photoDate.Format("01")
-	day := photoDate.Format("02")
+// CreateTargetDirectory creates the year/month directory structure within the target base directory.
+// Example: targetBaseDir/YYYY/MM
+func CreateTargetDirectory(targetBaseDir string, date time.Time) (string, error) {
+	yearDir := filepath.Join(targetBaseDir, date.Format("2006"))
+	monthDir := filepath.Join(yearDir, date.Format("01")) // 01 for MM
 
-	targetPath := filepath.Join(targetBaseDir, year, month, day)
-
-	// Create the directory, including any necessary parents
-	err := os.MkdirAll(targetPath, 0755) // 0755 gives rwx for owner, rx for group and others
-	if err != nil {
-		return "", fmt.Errorf("failed to create target directory '%s': %w", targetPath, err)
+	// Create the year directory if it doesn't exist
+	if err := os.MkdirAll(monthDir, 0755); err != nil {
+		return "", fmt.Errorf("failed to create target directory %s: %w", monthDir, err)
 	}
-
-	return targetPath, nil
+	return monthDir, nil // Return the YYYY/MM path
 }
 
 // GetPhotoCreationDate extracts the creation date from a photo's EXIF data.

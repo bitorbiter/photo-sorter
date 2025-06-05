@@ -265,21 +265,42 @@ func main() {
 				}
 				photoDate = fileInfoStat.ModTime()
 				dateSource = "FileModTime"
-				fmt.Printf("  - Using fallback date (%s): %s\n", dateSource, photoDate.Format("2006-01-02"))
+				fmt.Printf("  - Using fallback date (%s): %s\n", dateSource, photoDate.Format("2006-01-02-150405"))
 			}
 
-			targetDayDir, err := pkg.CreateTargetDirectory(targetBaseDir, photoDate)
+			targetMonthDir, err := pkg.CreateTargetDirectory(targetBaseDir, photoDate) // Changed targetDayDir to targetMonthDir
 			if err != nil {
 				log.Printf("  - Error creating target directory for %s (date: %s, source: %s): %v. Skipping copy.\n",
-					currentFilePath, photoDate.Format("2006-01-02"), dateSource, err)
+					currentFilePath, photoDate.Format("2006-01-02-150405"), dateSource, err)
 				filesToCopyCount--
 				continue
 			}
 
 			originalExtension := filepath.Ext(currentFilePath)
-			dateStr := photoDate.Format("2006-01-02")
-			newFileName := fmt.Sprintf("image-%s%s", dateStr, originalExtension)
-			destPath := filepath.Join(targetDayDir, newFileName)
+			baseName := photoDate.Format("2006-01-02-150405")
+			newFileName := fmt.Sprintf("%s%s", baseName, originalExtension)
+			destPath := filepath.Join(targetMonthDir, newFileName) // Use targetMonthDir
+
+			// Handle filename conflicts with versioning
+			version := 1
+			originalDestPath := destPath // Keep track of the first path tried for logging
+			for {
+				if _, statErr := os.Stat(destPath); os.IsNotExist(statErr) {
+					if destPath != originalDestPath { // Log if a new name was generated
+						fmt.Printf("  - Path %s existed. Using versioned name: %s\n", originalDestPath, destPath)
+					}
+					break // Path does not exist, use this destPath
+				} else if statErr != nil {
+					// Some other error when stating the file, log and skip copy for this file
+					log.Printf("  - Error stating file %s: %v. Skipping copy.\n", destPath, statErr)
+					filesToCopyCount--
+					goto nextFileLoop // Using goto to break out of this and continue outer loop
+				}
+				// Path exists, try next version
+				newFileName = fmt.Sprintf("%s-%d%s", baseName, version, originalExtension)
+				destPath = filepath.Join(targetMonthDir, newFileName)
+				version++
+			}
 			fmt.Printf("  - Preparing to copy to: %s\n", destPath)
 
 			if err := pkg.CopyFile(currentFilePath, destPath); err != nil {
@@ -290,6 +311,7 @@ func main() {
 				copiedFilesCounter++
 			}
 		} // This closes the 'if processThisFile' block
+		nextFileLoop: // Label for goto
 	} // This closes the main 'for' loop
 
 	fmt.Println("\n--- Photo Sorting Process Completed ---")

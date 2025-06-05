@@ -1,10 +1,10 @@
 # Photo Sorter
 
 ## Overview
-Photo Sorter is a command-line tool written in Go to help you organize your photo library. It copies photos from a source directory, sorts them into a new directory structure based on their creation date (YYYY/MM/DD), and identifies duplicate files.
+Photo Sorter is a command-line tool written in Go to help you organize your photo library. It copies photos from a source directory, sorts them into a new directory structure based on their creation date (YYYY/MM), and identifies duplicate files.
 
 ## Features
-- **Date-Based Sorting:** Organizes photos into `YYYY/MM/DD` folders based on EXIF creation date, falling back to file modification time if EXIF date is unavailable. Photos will be renamed to the format image-YYYY-MM-DD.<original_extension>
+- **Date-Based Sorting:** Organizes photos into `YYYY/MM` folders based on EXIF creation date, falling back to file modification time if EXIF date is unavailable. Photos will be renamed to the format `YYYY-MM-DD-HHMMSS(-v).<original_extension>` (e.g., `2023-10-27-153000.jpg` or `2023-10-27-153000-1.jpg` if a conflict occurs).
 - **Advanced Duplicate Detection:**
   - For supported image types (e.g., JPEG, PNG, GIF), duplicates are primarily identified by comparing the SHA-256 hash of their raw pixel data (ignoring metadata). This helps find visually identical images.
   - For file types where pixel data extraction is not supported (e.g., certain RAW files, non-image files) or if pixel extraction fails, duplicate detection falls back to comparing the SHA-256 hash of the entire file content.
@@ -53,7 +53,7 @@ Or on Windows:
 
 **Command-line Flags:**
 * `-sourceDir`: (Required) The directory containing the photos you want to sort. The tool will scan this directory recursively for image files (common formats like JPG, PNG, GIF, and various RAW types are supported for scanning).
-* `-targetDir`: (Required) The base directory where the sorted photos will be copied. Photos will be organized into `YYYY/MM/DD` subfolders within this directory.
+* `-targetDir`: (Required) The base directory where the sorted photos will be copied. Photos will be organized into `YYYY/MM` subfolders within this directory.
 
 ## Duplicate Handling and Report
 The tool employs a two-tiered approach for identifying duplicate photos:

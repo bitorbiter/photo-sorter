@@ -5,13 +5,13 @@ This document lists the implemented features and requirements for the Photo Sort
 ## Core Functionality
 
 -   **REQ-CF-DS-01:** **Date-Based Sorting:**
-    -   **REQ-CF-DS-02:** Organizes photos into a directory structure of `YYYY/MM/DD`.
+    -   **REQ-CF-DS-02:** Organizes photos into a directory structure of `YYYY/MM`.
     -   **REQ-CF-DS-03:** Uses the photo's EXIF creation date if available.
     -   **REQ-CF-DS-04:** Falls back to the file's last modification time if EXIF date is not found or is invalid.
 
 -   **REQ-CF-FR-01:** **File Renaming:**
     -   **REQ-CF-FR-02:** Photos copied to the target directory are renamed.
-    -   **REQ-CF-FR-03:** The new filename format is `image-YYYY-MM-DD.<original_extension>` (e.g., `image-2023-10-27.jpg`).
+    -   **REQ-CF-FR-03:** The new filename format is `YYYY-MM-DD-HHMMSS(-v).<original_extension>` (e.g., `2023-10-27-153000.jpg` or `2023-10-27-153000-1.jpg`).
 
 -   **REQ-CF-ADD-01:** **Advanced Duplicate Detection:**
     -   **REQ-CF-ADD-02:** Employs a two-tiered approach to identify duplicate files:
