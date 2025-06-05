@@ -103,7 +103,8 @@ func main() {
 		fmt.Println("No image files found in source directory.")
 		// Assuming GenerateReport expects the local DuplicateInfo type for now.
 		// This will be confirmed/fixed when we check pkg/reporter.go's GenerateReport signature.
-		if genErr := pkg.GenerateReport(reportFilePath, duplicateReportEntries, copiedFilesCounter, processedFilesCounter, filesToCopyCount); genErr != nil {
+		// Add pixelHashUnsupportedCounter, which will be 0 at this point.
+		if genErr := pkg.GenerateReport(reportFilePath, duplicateReportEntries, copiedFilesCounter, processedFilesCounter, filesToCopyCount, pixelHashUnsupportedCounter); genErr != nil {
 			log.Fatalf("Failed to generate final report: %v", genErr)
 		}
 		return
@@ -242,8 +243,9 @@ func main() {
 		// Ensure that if processThisFile is true, we actually proceed.
 		// The if processThisFile { filesToCopyCount++ ... } block should follow directly.
 
-		// This is where the original `if processThisFile {` block content starts
-		filesToCopyCount++
+		// Now, if processThisFile is true, proceed with copying.
+		if processThisFile { // This was the block potentially missing its 'if'
+			filesToCopyCount++
 
 			var photoDate time.Time
 			var dateSource string
@@ -287,8 +289,8 @@ func main() {
 				fmt.Printf("  - Successfully copied %s to %s\n", currentFilePath, destPath)
 				copiedFilesCounter++
 			}
-		}
-	}
+		} // This closes the 'if processThisFile' block
+	} // This closes the main 'for' loop
 
 	fmt.Println("\n--- Photo Sorting Process Completed ---")
 	// Assuming GenerateReport expects the local DuplicateInfo type.

@@ -135,7 +135,9 @@ func TestGetImageResolution(t *testing.T) {
 	// Valid PNG
 	pngFilePath := filepath.Join(tmpDir, "test.png")
 	expectedWidth, expectedHeight := 100, 50
-	createDummyPNG(t, pngFilePath, expectedWidth, expectedHeight)
+	// Provide a default color, e.g., color.Black or a specific color
+	defaultColor := color.RGBA{100, 200, 200, 255} // Matches old implicit color
+	createDummyPNG(t, pngFilePath, expectedWidth, expectedHeight, defaultColor)
 
 	// File that is not an image
 	notAnImagePath := filepath.Join(tmpDir, "not_an_image.txt")
@@ -386,7 +388,7 @@ func TestCalculatePixelDataHash(t *testing.T) {
 		_, err := pkg.CalculatePixelDataHash(nonExistentPath)
 		if err == nil {
 			t.Errorf("Expected error for non-existent file, got nil")
-		} else if !os.IsNotExist(err) { // Check for underlying os.ErrNotExist
+		} else if !errors.Is(err, os.ErrNotExist) { // Use errors.Is for wrapped errors
 			t.Errorf("Expected os.ErrNotExist for non-existent file, got: %v", err)
 		}
 	})

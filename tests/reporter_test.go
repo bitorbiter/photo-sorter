@@ -41,6 +41,7 @@ func TestGenerateReport(t *testing.T) {
 		copiedFilesCount    int
 		processedFilesCount int
 		filesToCopyCount    int
+		pixelHashUnsupportedCount int // New field, though can default to 0 for these tests
 		expectErr           bool
 		expectedSubstrings  []string // Substrings to check for in the report
 	}{
@@ -51,12 +52,14 @@ func TestGenerateReport(t *testing.T) {
 			copiedFilesCount:    5,
 			processedFilesCount: 10,
 			filesToCopyCount:    7, // 5 copied + 2 from duplicates (kept versions)
+			pixelHashUnsupportedCount: 1, // Example value
 			expectErr:           false,
 			expectedSubstrings: []string{
 				"Total files scanned: 10",
 				"Files identified for copying (unique or better): 7",
 				"Files successfully copied: 5",
 				"Duplicate files found and discarded/skipped: 2",
+				"Files where pixel hashing was not supported (fallback to file hash): 1",
 				"Kept: path/to/kept1.jpg",
 				"Discarded: path/to/discarded1.jpg",
 				"Reason: Higher resolution",
@@ -72,12 +75,14 @@ func TestGenerateReport(t *testing.T) {
 			copiedFilesCount:    8,
 			processedFilesCount: 8,
 			filesToCopyCount:    8,
+			pixelHashUnsupportedCount: 0,
 			expectErr:           false,
 			expectedSubstrings: []string{
 				"Total files scanned: 8",
 				"Files identified for copying (unique or better): 8",
 				"Files successfully copied: 8",
 				"Duplicate files found and discarded/skipped: 0",
+				"Files where pixel hashing was not supported (fallback to file hash): 0",
 			},
 		},
 		{
@@ -87,6 +92,7 @@ func TestGenerateReport(t *testing.T) {
 			copiedFilesCount:    0,
 			processedFilesCount: 0,
 			filesToCopyCount:    0,
+			pixelHashUnsupportedCount: 0,
 			expectErr:           true,
 			expectedSubstrings:  nil,
 		},
@@ -94,7 +100,7 @@ func TestGenerateReport(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := pkg.GenerateReport(tt.reportPath, tt.duplicates, tt.copiedFilesCount, tt.processedFilesCount, tt.filesToCopyCount)
+			err := pkg.GenerateReport(tt.reportPath, tt.duplicates, tt.copiedFilesCount, tt.processedFilesCount, tt.filesToCopyCount, tt.pixelHashUnsupportedCount)
 
 			if (err != nil) != tt.expectErr {
 				t.Errorf("pkg.GenerateReport() error = %v, expectErr %v", err, tt.expectErr)

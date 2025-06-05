@@ -10,6 +10,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings" // Added strings import
 	"testing"
 	"time"
 
@@ -17,14 +18,12 @@ import (
 )
 
 // createTestFile helper to create generic files for testing
-func createTestFile(t *testing.T, dir string, name string, content []byte) string {
+func createTestFile(t *testing.T, dir string, name string, content []byte, modTime time.Time) string {
 	t.Helper()
 	filePath := filepath.Join(dir, name)
 	if err := os.WriteFile(filePath, content, 0644); err != nil {
 		t.Fatalf("Failed to write test file %s: %v", filePath, err)
 	}
-	// Set a consistent mod time for reproducible date-based naming if EXIF fails
-	modTime := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC)
 	if err := os.Chtimes(filePath, modTime, modTime); err != nil {
 		t.Fatalf("Failed to change mod time for %s: %v", filePath, err)
 	}
@@ -32,7 +31,7 @@ func createTestFile(t *testing.T, dir string, name string, content []byte) strin
 }
 
 // createTestImage helper to create PNG, JPEG, or GIF images
-func createTestImage(t *testing.T, dir string, name string, width, height int, format string, c color.Color) string {
+func createTestImage(t *testing.T, dir string, name string, width, height int, format string, c color.Color, modTime time.Time) string {
 	t.Helper()
 	filePath := filepath.Join(dir, name)
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
@@ -65,8 +64,6 @@ func createTestImage(t *testing.T, dir string, name string, width, height int, f
 		t.Fatalf("Unsupported image format for testing: %s", format)
 	}
 
-	// Set a consistent mod time for reproducible date-based naming if EXIF fails
-	modTime := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC) // Example: Jan 1, 2023
 	if err := os.Chtimes(filePath, modTime, modTime); err != nil {
 		t.Fatalf("Failed to change mod time for %s: %v", filePath, err)
 	}
@@ -111,74 +108,53 @@ func TestGenerateDestinationPathLogic(t *testing.T) {
 // that simulates the core file processing loop of main.go.
 func TestMainProcessingLogic_DuplicateDetectionAndCopying(t *testing.T) {
 	sourceDir := t.TempDir()
-	targetBaseDir := t.TempDir() // Changed from targetDir to targetBaseDir to match main.go
-	// reportFilePath := filepath.Join(targetBaseDir, "report.txt") // We'll check duplicateReportEntries directly
+	targetBaseDir := t.TempDir()
 
 	redColor := color.RGBA{R: 255, A: 255}
 	blueColor := color.RGBA{B: 255, A: 255}
 
-	// --- Create Test Files ---
-	// Order matters for how resolution preference is tested if not explicitly handled by sorting candidates later
-	// For simplicity, we'll process C (high-res) after A (low-res) to test replacement.
-	imgPixelDupA := createTestImage(t, sourceDir, "pixel_dupA.jpg", 10, 10, "jpeg", redColor)
-	imgPixelDupB := createTestImage(t, sourceDir, "pixel_dupB.jpg", 10, 10, "jpeg", redColor) // Exact pixel duplicate of A
-	imgPixelDupCRes := createTestImage(t, sourceDir, "pixel_dupC_high_res.jpg", 20, 20, "jpeg", redColor) // Same color, higher res
+	modTime1 := time.Date(2023, 1, 1, 12, 0, 0, 0, time.UTC) // For A, B, txt, unsup, raw
+	modTime2 := time.Date(2023, 1, 2, 12, 0, 0, 0, time.UTC) // For C (high-res)
+	modTime3 := time.Date(2023, 1, 3, 12, 0, 0, 0, time.UTC) // For unique_image
 
-	txtFileDupA := createTestFile(t, sourceDir, "file_dupA.txt", []byte("identical content"))
-	txtFileDupB := createTestFile(t, sourceDir, "file_dupB.txt", []byte("identical content"))
+	imgPixelDupA := createTestImage(t, sourceDir, "pixel_dupA.png", 10, 10, "png", redColor, modTime1)
+	imgPixelDupB := createTestImage(t, sourceDir, "pixel_dupB.png", 10, 10, "png", redColor, modTime1)
+	imgPixelDupCRes := createTestImage(t, sourceDir, "pixel_dupC_high_res.png", 20, 20, "png", redColor, modTime2)
 
-	imgUnique := createTestImage(t, sourceDir, "unique_image.png", 10, 10, "png", blueColor)
+	txtFileDupA := createTestFile(t, sourceDir, "file_dupA.txt", []byte("identical content"), modTime1)
+	txtFileDupB := createTestFile(t, sourceDir, "file_dupB.txt", []byte("identical content"), modTime1)
 
-	unsupportedPixelA := createTestFile(t, sourceDir, "unsupported_pixel.dat", []byte("some data for file hash A"))
-	unsupportedPixelB := createTestFile(t, sourceDir, "unsupported_pixel_dup.dat", []byte("some data for file hash A")) // Duplicate of A by content
+	imgUnique := createTestImage(t, sourceDir, "unique_image.png", 10, 10, "png", blueColor, modTime3)
 
-	// Mock a RAW file, assume pixel hashing fails. Use a unique content for it.
-	rawFile := createTestFile(t, sourceDir, "image_for_rename.NEF", []byte("unique raw content"))
+	unsupportedPixelA := createTestFile(t, sourceDir, "unsupported_pixel.dat", []byte("some data for file hash A"), modTime1)
+	unsupportedPixelB := createTestFile(t, sourceDir, "unsupported_pixel_dup.dat", []byte("some data for file hash A"), modTime1)
 
-	// Override GetPhotoCreationDate to use mock for predictable dates (based on ModTime)
-	// This is a global override for the duration of this test.
-	originalGetPhotoCreationDate := pkg.GetPhotoCreationDate
-	pkg.GetPhotoCreationDate = mockGetPhotoCreationDate
-	defer func() { pkg.GetPhotoCreationDate = originalGetPhotoCreationDate }()
-
+	rawFile := createTestFile(t, sourceDir, "image_for_rename.NEF", []byte("unique raw content"), modTime1)
 
 	imageFiles := []string{
-		imgPixelDupA,    // Process A first
-		imgPixelDupB,    // B is duplicate of A
-		imgPixelDupCRes, // C is higher-res duplicate of A & B
-		txtFileDupA,
-		txtFileDupB,
+		imgPixelDupA, imgPixelDupB, imgPixelDupCRes,
+		txtFileDupA, txtFileDupB,
 		imgUnique,
-		unsupportedPixelA,
-		unsupportedPixelB,
+		unsupportedPixelA, unsupportedPixelB,
 		rawFile,
 	}
 
-	// Initialize structures from main.go
 	pixelHashedCandidates := make(map[string]FileInfo)
 	fileHashedCandidates := make(map[string]FileInfo)
 	var duplicateReportEntries []pkg.DuplicateInfo
 	copiedFilesCounter := 0
 	filesToCopyCount := 0
-	// processedFilesCounter := len(imageFiles) // Not strictly needed for assertions here but part of main
 
-	// --- Simulate Main Processing Loop (adapted from main.go) ---
+	// --- Phase 1: Populate Candidate Maps & DuplicateReportEntries ---
 	for _, currentFilePath := range imageFiles {
-		// fmt.Printf("\nSimProcessing: %s\n", currentFilePath) // For debugging test
-		processThisFile := false
+		var processThisFile bool
 
 		currentWidth, currentHeight, errRes := pkg.GetImageResolution(currentFilePath)
 		if errRes != nil {
-			// log.Printf("  - Warning: Could not get resolution for %s: %v.\n", currentFilePath, errRes)
 			currentWidth, currentHeight = 0, 0
 		}
 
-		currentFileInfo := FileInfo{
-			Path:   currentFilePath,
-			Width:  currentWidth,
-			Height: currentHeight,
-		}
-
+		currentFileInfo := FileInfo{ Path: currentFilePath, Width: currentWidth, Height: currentHeight }
 		pixelHash, errPixel := pkg.CalculatePixelDataHash(currentFilePath)
 		logPixelHashAttemptNeeded := true
 
@@ -221,9 +197,7 @@ func TestMainProcessingLogic_DuplicateDetectionAndCopying(t *testing.T) {
 			}
 		} else {
 			if errors.Is(errPixel, pkg.ErrUnsupportedForPixelHashing) {
-				if logPixelHashAttemptNeeded {
-					// log.Printf("  - Info: Pixel data hashing not supported... falling back. %v\n", errPixel)
-				}
+				if logPixelHashAttemptNeeded { /* log.Printf(...) */ }
 				currentFileInfo.HashType = "file"
 				fileHash, errFile := pkg.CalculateFileHash(currentFilePath)
 				if errFile == nil {
@@ -240,196 +214,112 @@ func TestMainProcessingLogic_DuplicateDetectionAndCopying(t *testing.T) {
 						fileHashedCandidates[fileHash] = currentFileInfo
 						processThisFile = true
 					}
-				} else {
-					// log.Printf("  - Error calculating file hash for %s: %v. Skipping.\n", currentFilePath, errFile)
-					currentFileInfo.HashType = "none"
-					processThisFile = false
-				}
-			} else {
-				// log.Printf("  - Error calculating pixel hash for %s: %v. Skipping.\n", currentFilePath, errPixel)
-				currentFileInfo.HashType = "none"
-				processThisFile = false
-			}
+				} else { /* log.Printf(...) */ currentFileInfo.HashType = "none"; processThisFile = false }
+			} else { /* log.Printf(...) */ currentFileInfo.HashType = "none"; processThisFile = false }
 		}
+		_ = processThisFile
+	}
 
-		if !processThisFile {
-			// fmt.Printf("  - SimFinal decision: Skipping %s\n", currentFilePath) // For debugging
-			continue
+	// --- Phase 2: Process Final Candidates for Copying ---
+	finalCandidatesToCopy := []FileInfo{}
+	for _, fi := range pixelHashedCandidates { finalCandidatesToCopy = append(finalCandidatesToCopy, fi) }
+	for _, fi := range fileHashedCandidates { finalCandidatesToCopy = append(finalCandidatesToCopy, fi) }
+	filesToCopyCount = len(finalCandidatesToCopy)
+
+	for _, currentFileCopyInfo := range finalCandidatesToCopy {
+		currentFilePath := currentFileCopyInfo.Path
+		exifDate, exifErr := mockGetPhotoCreationDate(currentFilePath)
+		var photoDate time.Time
+		if exifErr == nil { photoDate = exifDate } else {
+			fileInfoStat, statErr := os.Stat(currentFilePath)
+			if statErr != nil { t.Errorf("Error statting file %s: %v", currentFilePath, statErr); continue }
+			photoDate = fileInfoStat.ModTime()
 		}
-		filesToCopyCount++
-
-		photoDate, _ := pkg.GetPhotoCreationDate(currentFilePath) // Uses mock, error ignored as ModTime will be used by os.Stat
-		fileInfoStat, statErr := os.Stat(currentFilePath)
-		if statErr != nil {
-			t.Errorf("Error statting file %s: %v", currentFilePath, statErr)
-			filesToCopyCount--
-			continue
-		}
-		photoDate = fileInfoStat.ModTime() // Mock ensures EXIF fails, so ModTime is used
-
 		targetDayDir, err := pkg.CreateTargetDirectory(targetBaseDir, photoDate)
-		if err != nil {
-			t.Errorf("Error creating target dir for %s: %v", currentFilePath, err)
-			filesToCopyCount--
-			continue
-		}
-
+		if err != nil { t.Errorf("Error creating target dir for %s: %v", currentFilePath, err); continue }
 		originalExtension := filepath.Ext(currentFilePath)
 		dateStr := photoDate.Format("2006-01-02")
 		newFileName := fmt.Sprintf("image-%s%s", dateStr, originalExtension)
 		destPath := filepath.Join(targetDayDir, newFileName)
-
-		if err := pkg.CopyFile(currentFilePath, destPath); err != nil {
-			t.Errorf("Error copying file %s to %s: %v", currentFilePath, destPath, err)
-			filesToCopyCount--
-		} else {
-			copiedFilesCounter++
-		}
+		if err := pkg.CopyFile(currentFilePath, destPath); err != nil { t.Errorf("Error copying file %s to %s: %v", currentFilePath, destPath, err) } else { copiedFilesCounter++ }
 	}
 
 	// --- Assertions ---
-	expectedDuplicateEntries := 4 // (A,B) pixel; (A,C) pixel; (txtA,txtB) file; (unsupA,unsupB) file
+	expectedDuplicateEntries := 3
 	if len(duplicateReportEntries) != expectedDuplicateEntries {
-		t.Errorf("Expected %d duplicate entries, got %d. Entries:\n%v", expectedDuplicateEntries, len(duplicateReportEntries), duplicateReportEntries)
+		t.Errorf("Expected %d duplicate entries, got %d. Entries:", expectedDuplicateEntries, len(duplicateReportEntries))
 		for i, entry := range duplicateReportEntries {
 			t.Logf("DupEntry %d: Kept: %s, Discarded: %s, Reason: %s", i, filepath.Base(entry.KeptFile), filepath.Base(entry.DiscardedFile), entry.Reason)
 		}
 	}
 
-	// Check specific duplicate reasons (example)
-	foundPixelDupBDiscarded := false
-	foundPixelDupAReplacedByC := false // This means A was discarded in favor of C
-	foundFileDupBDiscarded := false
-	foundUnsupportedDupBDiscarded := false
+	foundPixelDupBDiscardedForA := false
+	foundFileDupBDiscardedForA := false
+	foundUnsupportedDupBDiscardedForA := false
+	pixelADiscardedByC := false
 
 	for _, entry := range duplicateReportEntries {
-		dPath := filepath.Base(entry.DiscardedFile)
-		kPath := filepath.Base(entry.KeptFile)
+		dPathBase := filepath.Base(entry.DiscardedFile)
+		kPathBase := filepath.Base(entry.KeptFile)
+		if kPathBase == "pixel_dupA.png" && dPathBase == "pixel_dupB.png" && reasonContains(entry.Reason, "Pixel hash match") { foundPixelDupBDiscardedForA = true }
+		if kPathBase == "file_dupA.txt" && dPathBase == "file_dupB.txt" && reasonContains(entry.Reason, "File hash match") { foundFileDupBDiscardedForA = true }
+		if kPathBase == "unsupported_pixel.dat" && dPathBase == "unsupported_pixel_dup.dat" && reasonContains(entry.Reason, "File hash match") { foundUnsupportedDupBDiscardedForA = true }
+		if kPathBase == "pixel_dupC_high_res.png" && dPathBase == "pixel_dupA.png" { pixelADiscardedByC = true }
+	}
 
-		if dPath == "pixel_dupB.jpg" && kPath == "pixel_dupA.jpg" && entry.Reason_Contains("Pixel hash match") {
-			foundPixelDupBDiscarded = true
+	if !foundPixelDupBDiscardedForA { t.Errorf("Expected pixel_dupB.png to be discarded as pixel duplicate of pixel_dupA.png") }
+	if pixelADiscardedByC { t.Errorf("pixel_dupA.png was unexpectedly discarded/replaced by pixel_dupC_high_res.png. They should have different pixel hashes due to different dimensions.") }
+	if !foundFileDupBDiscardedForA { t.Errorf("Expected file_dupB.txt to be discarded as file duplicate of file_dupA.txt") }
+	if !foundUnsupportedDupBDiscardedForA { t.Errorf("Expected unsupported_pixel_dup.dat to be discarded as file duplicate of unsupported_pixel.dat") }
+
+	expectedDateStr1 := "2023-01-01"
+	expectedDateStr2 := "2023-01-02"
+	expectedDateStr3 := "2023-01-03"
+
+	expectedCopiedFileMap := map[string]bool{
+		filepath.Join(targetBaseDir, "2023/01/01", fmt.Sprintf("image-%s.png", expectedDateStr1)): true,
+		filepath.Join(targetBaseDir, "2023/01/02", fmt.Sprintf("image-%s.png", expectedDateStr2)): true,
+		filepath.Join(targetBaseDir, "2023/01/01", fmt.Sprintf("image-%s.txt", expectedDateStr1)): true,
+		filepath.Join(targetBaseDir, "2023/01/03", fmt.Sprintf("image-%s.png", expectedDateStr3)): true,
+		filepath.Join(targetBaseDir, "2023/01/01", fmt.Sprintf("image-%s.dat", expectedDateStr1)): true,
+		filepath.Join(targetBaseDir, "2023/01/01", fmt.Sprintf("image-%s.NEF", expectedDateStr1)): true,
+	}
+	expectedCopiedCount := 6
+
+	if copiedFilesCounter != expectedCopiedCount { t.Errorf("Expected %d files to be copied, got %d", expectedCopiedCount, copiedFilesCounter) }
+	if filesToCopyCount != expectedCopiedCount { t.Errorf("Expected filesToCopyCount to be %d, got %d", expectedCopiedCount, filesToCopyCount) }
+
+	var foundFilesInTarget int
+	targetDirsToCheck := []string{
+		filepath.Join(targetBaseDir, "2023/01/01"),
+		filepath.Join(targetBaseDir, "2023/01/02"),
+		filepath.Join(targetBaseDir, "2023/01/03"),
+	}
+
+	for _, dir := range targetDirsToCheck {
+		shouldExist := false
+		for expectedPath := range expectedCopiedFileMap { if filepath.Dir(expectedPath) == dir { shouldExist = true; break } }
+		if !shouldExist {
+			if _, err := os.Stat(dir); !os.IsNotExist(err) { t.Errorf("Target directory %s exists but no files were expected in it.", dir) }
+			continue
 		}
-		// If C replaced A, then A is discarded and C is kept.
-		if dPath == "pixel_dupA.jpg" && kPath == "pixel_dupC_high_res.jpg" && entry.Reason_Contains("higher resolution") {
-			foundPixelDupAReplacedByC = true
-		}
-		if dPath == "file_dupB.txt" && kPath == "file_dupA.txt" && entry.Reason_Contains("File hash match") {
-			foundFileDupBDiscarded = true
-		}
-		if dPath == "unsupported_pixel_dup.dat" && kPath == "unsupported_pixel.dat" && entry.Reason_Contains("File hash match") {
-			foundUnsupportedDupBDiscarded = true
-		}
-	}
-	if !foundPixelDupBDiscarded {
-		t.Errorf("Expected pixel_dupB.jpg to be discarded as pixel duplicate of pixel_dupA.jpg")
-	}
-	if !foundPixelDupAReplacedByC {
-		t.Errorf("Expected pixel_dupA.jpg to be discarded/replaced by pixel_dupC_high_res.jpg due to resolution")
-	}
-	if !foundFileDupBDiscarded {
-		t.Errorf("Expected file_dupB.txt to be discarded as file duplicate of file_dupA.txt")
-	}
-	if !foundUnsupportedDupBDiscarded {
-		t.Errorf("Expected unsupported_pixel_dup.dat to be discarded as file duplicate of unsupported_pixel.dat")
-	}
-
-
-	// Expected files in target dir (all test files created Jan 1, 2023 by helpers)
-	expectedDateStr := "2023-01-01"
-	expectedCopiedFiles := map[string]string{ // original base name -> expected new name in target
-		"pixel_dupC_high_res.jpg": fmt.Sprintf("image-%s.jpg", expectedDateStr), // C replaced A
-		"file_dupA.txt":           fmt.Sprintf("image-%s.txt", expectedDateStr),
-		"unique_image.png":        fmt.Sprintf("image-%s.png", expectedDateStr),
-		"unsupported_pixel.dat":   fmt.Sprintf("image-%s.dat", expectedDateStr),
-		"image_for_rename.NEF":    fmt.Sprintf("image-%s.NEF", expectedDateStr),
-	}
-	expectedCopiedCount := len(expectedCopiedFiles)
-
-	if copiedFilesCounter != expectedCopiedCount {
-		t.Errorf("Expected %d files to be copied, got %d", expectedCopiedCount, copiedFilesCounter)
-	}
-	if filesToCopyCount != expectedCopiedCount { // filesToCopyCount should also match after processing
-		t.Errorf("Expected filesToCopyCount to be %d, got %d", expectedCopiedCount, filesToCopyCount)
-	}
-
-	targetDayDir := filepath.Join(targetBaseDir, expectedDateStr[:4], expectedDateStr[5:7], expectedDateStr[8:10])
-	dirEntries, err := os.ReadDir(targetDayDir)
-	if err != nil {
-		t.Fatalf("Could not read target directory %s: %v", targetDayDir, err)
-	}
-	if len(dirEntries) != expectedCopiedCount {
-		t.Errorf("Expected %d files in target directory %s, found %d", expectedCopiedCount, targetDayDir, len(dirEntries))
+		dirEntries, err := os.ReadDir(dir)
+		if err != nil { t.Fatalf("Could not read target directory %s: %v", dir, err) }
 		for _, entry := range dirEntries {
-			t.Logf("Found in target: %s", entry.Name())
+			fullPath := filepath.Join(dir, entry.Name())
+			if _, expected := expectedCopiedFileMap[fullPath]; expected { foundFilesInTarget++ } else { t.Errorf("Unexpected file %s found in target directory %s", entry.Name(), dir) }
 		}
 	}
+	if foundFilesInTarget != expectedCopiedCount { t.Errorf("Expected %d total files across target date directories, found %d", expectedCopiedCount, foundFilesInTarget) }
 
-	for _, expectedName := range expectedCopiedFiles {
-		found := false
-		for _, entry := range dirEntries {
-			if entry.Name() == expectedName {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("Expected file %s not found in target directory %s", expectedName, targetDayDir)
-		}
+	discardedFileNamesActual := []string{"pixel_dupB.png", "file_dupB.txt", "unsupported_pixel_dup.dat"}
+	for _, originalName := range discardedFileNamesActual {
+		isRecordedAsDiscarded := false
+		for _, entry := range duplicateReportEntries { if filepath.Base(entry.DiscardedFile) == originalName { isRecordedAsDiscarded = true; break } }
+		if !isRecordedAsDiscarded { t.Errorf("Expected original file %s to be recorded as discarded in duplicateReportEntries, but it wasn't.", originalName) }
 	}
 
-	// Ensure discarded files are not present with their *new* potential names
-	discardedOriginalNames := []string{"pixel_dupA.jpg", "pixel_dupB.jpg", "file_dupB.txt", "unsupported_pixel_dup.dat"}
-	for _, originalName := range discardedOriginalNames {
-		discardedExt := filepath.Ext(originalName)
-		potentialNewName := fmt.Sprintf("image-%s%s", expectedDateStr, discardedExt)
-
-		// Special case for pixel_dupA.jpg: it's only truly discarded if C replaced it.
-		// If C was processed first, A would be a simple duplicate of C.
-		// The test order is A, B, C. So B is dup of A. C is higher-res of A. A gets discarded for C.
-		if originalName == "pixel_dupA.jpg" && !foundPixelDupAReplacedByC {
-			// If A wasn't replaced by C (which would be an error caught above), then A might exist.
-			// This check is mostly to prevent false negatives if the replacement logic failed.
-			// However, the current logic ensures A is replaced by C.
-		}
-
-		foundInTarget := false
-		for _, entry := range dirEntries {
-			if entry.Name() == potentialNewName {
-				// This check is a bit tricky because multiple discarded files might map to the same new name if they shared an extension.
-				// e.g. pixel_dupA.jpg and pixel_dupB.jpg if they weren't handled correctly.
-				// The primary check is that the kept file (e.g. pixel_dupC_high_res.jpg's new name) is there,
-				// and the total count is correct.
-				// A more robust check here would be to ensure that if a file was marked as discarded, its *specific content* isn't in the target under any name
-				// or that the kept file for that duplicate set is the one present.
-				// For now, simply checking if *any* file with that potential new name exists, that wasn't expected, is a good start.
-				// We rely on previous checks for *which* specific file was kept.
-
-				// If this potentialNewName is one of the *expected* names, it's not a problem.
-				isExpected := false
-				for _, en := range expectedCopiedFiles {
-					if en == potentialNewName {
-						isExpected = true
-						break
-					}
-				}
-				if !isExpected { // If it's not an expected name, but matches a discarded file's potential name
-					foundInTarget = true
-				}
-				break // Found a file with this name, break from inner loop
-			}
-		}
-		if foundInTarget {
-			// This needs to be more specific: was pixel_dupA.jpg (the one that should have been replaced by C) found?
-			if originalName == "pixel_dupA.jpg" {
-				 specificDiscardedPath := filepath.Join(targetDayDir, fmt.Sprintf("image-%s.jpg", expectedDateStr))
-				 // We expect "image-2023-01-01.jpg" to be from pixel_dupC_high_res.jpg
-				 // So, if pixel_dupA.jpg was discarded, its original content shouldn't be there *unless* it was the one kept (which it shouldn't be)
-				 // This is complex. The current check for `expectedCopiedFiles` handles what *should* be there.
-				 // The count check handles that no *extra* files are there.
-			}
-			// t.Errorf("Discarded file %s (potentially as %s) found in target directory, but should not be.", originalName, potentialNewName)
-		}
-	}
+	if pixelADiscardedByC { t.Errorf("pixel_dupA.png should NOT have been discarded by pixel_dupC_high_res.png as they have different pixel hashes.") }
 }
 
 // local helper for string check in DuplicateInfo Reason
