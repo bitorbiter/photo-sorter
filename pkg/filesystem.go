@@ -166,7 +166,8 @@ func FindPotentialTargetConflicts(targetMonthDir, baseNameWithoutExt, extension 
 		extension = "." + extension
 	}
 	// Normalize extension to lowercase for case-insensitive comparison
-	normalizedExtension := strings.ToLower(extension)
+	// The variable `extension` is already dot-prefixed.
+	// lcSuffix below will handle the lowercasing.
 
 	entries, err := os.ReadDir(targetMonthDir)
 	if err != nil {
@@ -189,8 +190,8 @@ func FindPotentialTargetConflicts(targetMonthDir, baseNameWithoutExt, extension 
 	// We need to escape baseNameWithoutExt and extension for regex, though typically they won't have special chars.
 	// For simplicity and given the controlled nature of these inputs, direct string matching is safer and clearer.
 
-	prefix := baseNameWithoutExt
-	suffix := normalizedExtension
+	lcPrefix := strings.ToLower(baseNameWithoutExt)
+	lcSuffix := strings.ToLower(extension) // extension is already dot-prefixed
 
 	for _, entry := range entries {
 		if entry.IsDir() {
@@ -199,9 +200,9 @@ func FindPotentialTargetConflicts(targetMonthDir, baseNameWithoutExt, extension 
 		entryName := entry.Name()
 		entryNameLower := strings.ToLower(entryName)
 
-		if strings.HasPrefix(entryNameLower, strings.ToLower(prefix)) && strings.HasSuffix(entryNameLower, suffix) {
+		if strings.HasPrefix(entryNameLower, lcPrefix) && strings.HasSuffix(entryNameLower, lcSuffix) {
 			// Check the part between prefix and suffix
-			middlePart := entryName[len(prefix) : len(entryName)-len(extension)] // Use original case for slicing
+			middlePart := entryNameLower[len(lcPrefix) : len(entryNameLower)-len(lcSuffix)]
 
 			if middlePart == "" { // Exact match, e.g., baseNameWithoutExt.jpg
 				conflictingFiles = append(conflictingFiles, filepath.Join(targetMonthDir, entryName))
