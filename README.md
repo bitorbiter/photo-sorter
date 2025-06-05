@@ -4,8 +4,9 @@
 Photo Sorter is a command-line tool written in Go to help you organize your photo library. It copies photos from a source directory, sorts them into a new directory structure based on their creation date (YYYY/MM/DD), and identifies duplicate files.
 
 ## Features
-- **Date-Based Sorting:** Organizes photos into `YYYY/MM/DD` folders based on EXIF creation date, falling back to file modification time if EXIF date is unavailable.
+- **Date-Based Sorting:** Organizes photos into `YYYY/MM/DD` folders based on EXIF creation date, falling back to file modification time if EXIF date is unavailable. Photos will be renamed to the format image-YYYY-MM-DD.<format>
 - **Duplicate Detection:** Identifies duplicate photos based on file content (SHA-256 hash).
+- **Duplicate Detection:** Identifies duplicate photos based on the image without metadata (SHA-256 hash).
 - **Resolution Preference:** When duplicates are found, the tool attempts to keep the version with the highest image resolution.
 - **Reporting:** Generates a `report.txt` in the target directory detailing files processed, copied, and duplicates found (including which files were kept/discarded and why).
 - **Cross-Platform:** Designed to run on Windows, macOS, and Linux.
