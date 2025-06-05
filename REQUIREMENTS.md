@@ -63,3 +63,7 @@ This document lists the implemented features and requirements for the Photo Sort
 ## Dependencies
 - **REQ-DP-01:** Go (version 1.21 or later) for building.
 - **REQ-DP-02:** `goexif` library (github.com/rwcarlsen/goexif) for EXIF data extraction.
+- **REQ-DP-03:** `testify` library (github.com/stretchr/testify) for assertions and testing tools (indirect dependency).
+- **REQ-DP-04:** `go-spew` library (github.com/davecgh/go-spew) for pretty-printing data structures (indirect dependency, often used in testing).
+- **REQ-DP-05:** `go-difflib` library (github.com/pmezard/go-difflib) for data comparison utilities (indirect dependency, often used in testing).
+- **REQ-DP-06:** `yaml.v3` library (gopkg.in/yaml.v3) for YAML support (indirect dependency).
