@@ -138,21 +138,21 @@ func TestCreateTargetDirectory(t *testing.T) {
 		expectedErr bool
 	}{
 		{
-			name:        "create new directory",
+			name:        "create new directory YYYY/MM",
 			photoDate:   time.Date(2023, 10, 27, 0, 0, 0, 0, time.UTC),
-			expectedDir: "2023/10/27",
+			expectedDir: "2023/10", // Changed to YYYY/MM
 			expectedErr: false,
 		},
 		{
-			name:        "create another directory (idempotency check)",
+			name:        "create another directory YYYY/MM (idempotency check)",
 			photoDate:   time.Date(2023, 10, 27, 0, 0, 0, 0, time.UTC),
-			expectedDir: "2023/10/27",
+			expectedDir: "2023/10", // Changed to YYYY/MM
 			expectedErr: false,
 		},
 		{
-			name:        "create directory for different date",
+			name:        "create directory for different date YYYY/MM",
 			photoDate:   time.Date(2024, 1, 15, 0, 0, 0, 0, time.UTC),
-			expectedDir: "2024/01/15",
+			expectedDir: "2024/01", // Changed to YYYY/MM
 			expectedErr: false,
 		},
 	}
@@ -160,6 +160,8 @@ func TestCreateTargetDirectory(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			expectedFullPath := filepath.Join(baseTargetDir, tt.expectedDir)
+			// Log expected path for clarity during test runs
+			// t.Logf("Test case: %s, Expected full path: %s", tt.name, expectedFullPath)
 
 			createdPath, err := pkg.CreateTargetDirectory(baseTargetDir, tt.photoDate)
 			if (err != nil) != tt.expectedErr {
@@ -167,6 +169,7 @@ func TestCreateTargetDirectory(t *testing.T) {
 				return
 			}
 			if err == nil {
+				// t.Logf("Test case: %s, Created path: %s", tt.name, createdPath)
 				if createdPath != expectedFullPath {
 					t.Errorf("pkg.CreateTargetDirectory() path = %s, want %s", createdPath, expectedFullPath)
 				}
