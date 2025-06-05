@@ -277,7 +277,7 @@ func main() {
 			}
 
 			originalExtension := filepath.Ext(currentFilePath)
-			baseName := photoDate.Format("2006-01-02-150405")
+			baseName := photoDate.In(time.UTC).Format("2006-01-02-150405")
 			newFileName := fmt.Sprintf("%s%s", baseName, originalExtension)
 			destPath := filepath.Join(targetMonthDir, newFileName) // Use targetMonthDir
 
