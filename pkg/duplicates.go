@@ -25,6 +25,7 @@ const (
 	ReasonFileHashMismatch  = "file_hash_mismatch"
 	ReasonError             = "error"
 	ReasonNotCompared       = "not_compared" // e.g. if one file has EXIF, other doesn't, so EXIF isn't strictly a mismatch but a point of divergence
+	ReasonTargetNotFound    = "target_not_found"
 	HashTypePixel           = "pixel_sha256"
 	HashTypeFile            = "file_sha256"
 	HashTypeExif            = "exif_signature" // Not a cryptographic hash, but a signature
@@ -187,6 +188,16 @@ func CalculatePixelDataHash(filePath string) (string, error) {
 
 // AreFilesPotentiallyDuplicate implements the multi-step duplicate detection logic.
 func AreFilesPotentiallyDuplicate(filePath1, filePath2 string) (ComparisonResult, error) {
+	// Check if target file exists
+	if _, err := os.Stat(filePath2); os.IsNotExist(err) {
+		return ComparisonResult{
+			AreDuplicates: false,
+			Reason:        ReasonTargetNotFound,
+			FilePath1:     filePath1,
+			FilePath2:     filePath2,
+		}, nil
+	}
+
 	result := ComparisonResult{
 		AreDuplicates: false,
 		Reason:        ReasonNotCompared,

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/user/photo-sorter/pkg"
 	// "github.com/rwcarlsen/goexif/exif" // Not directly used in tests, but pkg uses it
 )
@@ -769,50 +771,66 @@ func TestAreFilesPotentiallyDuplicate(t *testing.T) {
 	// Test error propagation: one file does not exist
 	t.Run("FileDoesNotExist", func(t *testing.T) {
 		f1 := createTestFile(t, tmpDir, "exists.txt", "content")
-		nonExistentPath := filepath.Join(tmpDir, "nonexistent.txt")
-		compResult, err := pkg.AreFilesPotentiallyDuplicate(f1, nonExistentPath)
-		if err == nil {
-			t.Errorf("Expected error when one file does not exist, got nil. Result: %+v", compResult)
-		} else {
-			if !strings.Contains(err.Error(), nonExistentPath) && !strings.Contains(err.Error(), "no such file or directory") {
-				t.Errorf("Expected error related to '%s' not existing, got: %v", nonExistentPath, err)
-			}
-			if compResult.Reason != pkg.ReasonError {
-				t.Errorf("Expected ReasonError, got %s", compResult.Reason)
-			}
-			t.Logf("Got expected error for non-existent file: %v. Result: %+v", err, compResult)
-		}
+		nonExistentPathF2 := filepath.Join(tmpDir, "nonexistentF2.txt") // Target file non-existent
 
-		compResult, err = pkg.AreFilesPotentiallyDuplicate(nonExistentPath, f1)
-		if err == nil {
-			t.Errorf("Expected error when one file does not exist (arg1), got nil. Result: %+v", compResult)
+		// Scenario: Target file (filePath2) does not exist
+		compResultF2, errF2 := pkg.AreFilesPotentiallyDuplicate(f1, nonExistentPathF2)
+		if errF2 != nil {
+			t.Errorf("Expected no error when target file (filePath2) does not exist, got: %v. Result: %+v", errF2, compResultF2)
+		}
+		if compResultF2.AreDuplicates {
+			t.Errorf("Expected AreDuplicates to be false when target file does not exist, got true")
+		}
+		if compResultF2.Reason != pkg.ReasonTargetNotFound {
+			t.Errorf("Expected ReasonTargetNotFound when target file does not exist, got %s", compResultF2.Reason)
+		}
+		if compResultF2.FilePath2 != nonExistentPathF2 {
+			t.Errorf("Expected FilePath2 to be '%s', got '%s'", nonExistentPathF2, compResultF2.FilePath2)
+		}
+		t.Logf("Correctly handled non-existent target file (filePath2): Result: %+v", compResultF2)
+
+		// Scenario: Source file (filePath1) does not exist (original test logic for this part is mostly fine)
+		nonExistentPathF1 := filepath.Join(tmpDir, "nonexistentF1.txt") // Source file non-existent
+		compResultF1, errF1 := pkg.AreFilesPotentiallyDuplicate(nonExistentPathF1, f1)
+		if errF1 == nil {
+			t.Errorf("Expected error when source file (filePath1) does not exist, got nil. Result: %+v", compResultF1)
 		} else {
-			if !strings.Contains(err.Error(), nonExistentPath) && !strings.Contains(err.Error(), "no such file or directory") {
-				t.Errorf("Expected error related to '%s' not existing (arg1), got: %v", nonExistentPath, err)
+			if !strings.Contains(errF1.Error(), nonExistentPathF1) && !strings.Contains(errF1.Error(), "no such file or directory") {
+				t.Errorf("Expected error related to '%s' not existing (arg1), got: %v", nonExistentPathF1, errF1)
 			}
-			if compResult.Reason != pkg.ReasonError {
-				t.Errorf("Expected ReasonError, got %s", compResult.Reason)
+			if compResultF1.Reason != pkg.ReasonError {
+				t.Errorf("Expected ReasonError, got %s", compResultF1.Reason)
 			}
-			t.Logf("Got expected error for non-existent file (arg1): %v. Result: %+v", err, compResult)
+			t.Logf("Got expected error for non-existent source file (filePath1): %v. Result: %+v", errF1, compResultF1)
 		}
 	})
 
 	// Test for getFileSize explicitly (simple cases) - now tested via AreFilesPotentiallyDuplicate
 	t.Run("getFileSize_Basic_Implicit", func(t *testing.T) {
 		content := "12345"
-		fPath := createTestFile(t, tmpDir, "getsize.txt", content)
-		nonExistent := filepath.Join(tmpDir, "does_not_exist_for_size.txt")
+		fPath := createTestFile(t, tmpDir, "getsize_source.txt", content)
+		nonExistentTarget := filepath.Join(tmpDir, "does_not_exist_for_size_target.txt")
+		nonExistentSource := filepath.Join(tmpDir, "does_not_exist_for_size_source.txt")
 
-		// This call will invoke getFileSize internally. We already have "FileDoesNotExist" test for this.
-		// Just ensuring it's covered in thought.
-		compResult, err := pkg.AreFilesPotentiallyDuplicate(fPath, nonExistent)
-		if err == nil {
-			t.Errorf("Expected error from AreFilesPotentiallyDuplicate when getFileSize fails (for second arg). Result: %+v", compResult)
-		} else if !strings.Contains(err.Error(), "does_not_exist_for_size.txt") {
-			t.Errorf("Error message from AreFilesPotentiallyDuplicate did not mention missing file: %v", err)
+		// Scenario: Target file (filePath2) does not exist, getFileSize for filePath2 is effectively skipped by the new check
+		compResultTargetMissing, errTargetMissing := pkg.AreFilesPotentiallyDuplicate(fPath, nonExistentTarget)
+		if errTargetMissing != nil {
+			t.Errorf("Expected no error when target file for getFileSize does not exist, got %v. Result: %+v", errTargetMissing, compResultTargetMissing)
 		}
-		if compResult.Reason != pkg.ReasonError {
-			t.Errorf("Expected ReasonError when getFileSize fails, got %s", compResult.Reason)
+		if compResultTargetMissing.Reason != pkg.ReasonTargetNotFound {
+			t.Errorf("Expected ReasonTargetNotFound when target for getFileSize does not exist, got %s", compResultTargetMissing.Reason)
+		}
+		t.Logf("Correctly handled non-existent target for getFileSize check: Result: %+v", compResultTargetMissing)
+
+		// Scenario: Source file (filePath1) does not exist, getFileSize for filePath1 should cause an error
+		compResultSourceMissing, errSourceMissing := pkg.AreFilesPotentiallyDuplicate(nonExistentSource, fPath)
+		if errSourceMissing == nil {
+			t.Errorf("Expected error from AreFilesPotentiallyDuplicate when getFileSize fails for source file. Result: %+v", compResultSourceMissing)
+		} else if !strings.Contains(errSourceMissing.Error(), nonExistentSource) {
+			t.Errorf("Error message from AreFilesPotentiallyDuplicate did not mention missing source file: %v", errSourceMissing)
+		}
+		if compResultSourceMissing.Reason != pkg.ReasonError {
+			t.Errorf("Expected ReasonError when getFileSize fails for source file, got %s", compResultSourceMissing.Reason)
 		}
 	})
 
@@ -856,4 +874,99 @@ func TestAreFilesPotentiallyDuplicate(t *testing.T) {
 	// won't be tested for actual EXIF differences, only for EXIF presence/absence.
 	t.Log("Reminder: EXIF-specific logic paths (e.g. two images with *different* EXIF signatures) depend on the properties of test_source images (photoA1.jpg, photoA2.jpg). If these files lack EXIF or have identical EXIF, these specific paths may not be fully exercised.")
 
+}
+
+// TestAreFilesPotentiallyDuplicate_TargetFileExistence tests how AreFilesPotentiallyDuplicate behaves based on target file's existence.
+func TestAreFilesPotentiallyDuplicate_TargetFileExistence(t *testing.T) {
+	tmpDir := t.TempDir() // Handles cleanup of the directory and its contents
+
+	// Scenario 1: Target file does not exist
+	t.Run("TargetDoesNotExist", func(t *testing.T) {
+		sourceFilePath := createTestFile(t, tmpDir, "source-target-nonexistent.txt", "This is a source file.")
+		nonExistentTargetFilePath := filepath.Join(tmpDir, "nonexistent-target.txt") // Does not actually create the file
+
+		result, err := pkg.AreFilesPotentiallyDuplicate(sourceFilePath, nonExistentTargetFilePath)
+		// The new behavior is to return (result, nil) when target is not found, not an error.
+		require.NoError(t, err, "AreFilesPotentiallyDuplicate should not return an error when target does not exist")
+
+		assert.False(t, result.AreDuplicates, "AreDuplicates should be false when target doesn't exist")
+		assert.Equal(t, pkg.ReasonTargetNotFound, result.Reason, "Reason should be TargetNotFound")
+		assert.Equal(t, sourceFilePath, result.FilePath1)
+		assert.Equal(t, nonExistentTargetFilePath, result.FilePath2)
+	})
+
+	// Scenario 2: Target file exists
+	t.Run("TargetExistsIdenticalContent", func(t *testing.T) {
+		content := "Identical content for both files."
+		sourceFilePath := createTestFile(t, tmpDir, "source-target-identical-1.txt", content)
+		targetFilePath := createTestFile(t, tmpDir, "source-target-identical-2.txt", content)
+
+		result, err := pkg.AreFilesPotentiallyDuplicate(sourceFilePath, targetFilePath)
+		require.NoError(t, err)
+
+		assert.True(t, result.AreDuplicates, "AreDuplicates should be true for identical files")
+		// Assuming non-image, non-EXIF files, this should be a file hash match.
+		assert.Equal(t, pkg.ReasonFileHashMatch, result.Reason, "Reason should be FileHashMatch for identical files")
+	})
+
+	t.Run("TargetExistsDifferentContentSize", func(t *testing.T) {
+		sourceFilePath := createTestFile(t, tmpDir, "source-target-diffsize-1.txt", "Content for source file.")
+		targetFilePath := createTestFile(t, tmpDir, "source-target-diffsize-2.txt", "Different content for target file, resulting in a different size.")
+
+		result, err := pkg.AreFilesPotentiallyDuplicate(sourceFilePath, targetFilePath)
+		require.NoError(t, err)
+
+		assert.False(t, result.AreDuplicates, "AreDuplicates should be false for different sized files")
+		assert.Equal(t, pkg.ReasonSizeMismatch, result.Reason, "Reason should be SizeMismatch for different sized files")
+	})
+
+	t.Run("TargetExistsSameSizeDifferentContent", func(t *testing.T) {
+		// Ensure content has same byte length but is different
+		sourceContent := "SameSizeDiffContent1"
+		targetContent := "SameSizeDiffContent2"
+		// Ensure the helper createTestFile writes these exact strings.
+		// os.WriteFile will ensure byte counts match string lengths for simple ASCII.
+		require.Equal(t, len(sourceContent), len(targetContent), "Test setup error: contents must be same length for this test case")
+
+		sourceFilePath := createTestFile(t, tmpDir, "source-target-samesize-1.txt", sourceContent)
+		targetFilePath := createTestFile(t, tmpDir, "source-target-samesize-2.txt", targetContent)
+
+		result, err := pkg.AreFilesPotentiallyDuplicate(sourceFilePath, targetFilePath)
+		require.NoError(t, err)
+
+		assert.False(t, result.AreDuplicates, "AreDuplicates should be false for same size, different content files")
+		assert.Equal(t, pkg.ReasonFileHashMismatch, result.Reason, "Reason should be FileHashMismatch for same size, different content text files")
+	})
+
+	// Test with one of the files being an image, and target not existing
+	t.Run("TargetDoesNotExistSourceIsImage", func(t *testing.T) {
+		imgDir := t.TempDir() // Separate temp dir for image to ensure it's cleaned
+		sourceImagePath := filepath.Join(imgDir, "source.png")
+		createDummyPNG(t, sourceImagePath, 10, 10, color.RGBA{R: 10, G: 20, B: 30, A: 255})
+
+		nonExistentTargetFilePath := filepath.Join(tmpDir, "nonexistent-target-for-image.png")
+
+		result, err := pkg.AreFilesPotentiallyDuplicate(sourceImagePath, nonExistentTargetFilePath)
+		require.NoError(t, err)
+
+		assert.False(t, result.AreDuplicates)
+		assert.Equal(t, pkg.ReasonTargetNotFound, result.Reason)
+	})
+
+	// Test with source not existing (which should be an error, distinct from target not found)
+	t.Run("SourceDoesNotExist", func(t *testing.T) {
+		nonExistentSourceFilePath := filepath.Join(tmpDir, "nonexistent-source.txt")
+		targetFilePath := createTestFile(t, tmpDir, "target-for-nonexistent-source.txt", "Target content.")
+
+		// The behavior for source not existing is an error from os.Stat on source.
+		result, err := pkg.AreFilesPotentiallyDuplicate(nonExistentSourceFilePath, targetFilePath)
+		require.Error(t, err, "AreFilesPotentiallyDuplicate should return an error if source does not exist")
+		assert.True(t, errors.Is(err, os.ErrNotExist), "Error should be an os.ErrNotExist or wrap it for source")
+
+		// The result fields might not be fully populated or could be zero/default values
+		// depending on how early the error occurs. The key is that an error is returned.
+		// The current implementation returns an error from getFileSize for filePath1 if it doesn't exist.
+		assert.False(t, result.AreDuplicates, "AreDuplicates should be false when source doesn't exist")
+		assert.Equal(t, pkg.ReasonError, result.Reason, "Reason should be Error when source doesn't exist")
+	})
 }

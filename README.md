@@ -83,7 +83,9 @@ Or on Windows:
 * `-targetDir`: (Required) The base directory where the sorted photos will be copied. Photos will be organized into `YYYY/MM` subfolders within this directory.
 
 ## Duplicate Handling and Report
-The core logic of Photo Sorter involves first thoroughly comparing all processable files from the source directory to identify duplicates. Only files determined to be unique, or the preferred version in a set of duplicates (e.g., highest resolution), are then selected for the actual copy operation. This ensures that the target directory is populated efficiently without redundant files. The tool uses an enhanced multi-stage approach for this identification process:
+The core logic of Photo Sorter involves first thoroughly comparing all processable files from the source directory to identify duplicates. Only files determined to be unique, or the preferred version in a set of duplicates (e.g., highest resolution), are then selected for the actual copy operation. This ensures that the target directory is populated efficiently without redundant files.
+
+The comparison process now first checks if a potential duplicate file already exists at the target location. If the target file is not found, no comparison is performed for that specific source-target pair, optimizing the process. If the target file exists, the multi-step comparison (size, EXIF, pixel hash, file hash) proceeds. The tool uses an enhanced multi-stage approach for this identification process:
 
 1.  **File Size Comparison:**
     *   The first and quickest check. Files with different sizes are immediately considered non-duplicates. This avoids unnecessary processing for obviously different files.

@@ -14,7 +14,8 @@ This document lists the implemented features and requirements for the Photo Sort
     -   **REQ-CF-FR-03:** The new filename format is `YYYY-MM-DD-HHMMSS(-v).<original_extension>` (e.g., `2023-10-27-153000.jpg` or `2023-10-27-153000-1.jpg`).
 
 -   **REQ-CF-ADD-01:** **Advanced Duplicate Detection:**
-    -   Employs a layered approach to efficiently identify duplicate files:
+    -   **REQ-CF-ADD-01.A: Target File Existence Pre-check:** The comparison algorithm must first verify the existence of the file it is comparing against (the "target" or "destination" file). If this file does not exist, it is reported as 'target not found', and no further comparison steps (size, EXIF, hash) are performed for that specific source-target pair.
+    -   Employs a layered approach to efficiently identify duplicate files if the target file exists:
         1.  **REQ-CF-ADD-02:** **File Size Comparison:**
             -   Files with different sizes are considered non-duplicates immediately.
         2.  **REQ-CF-ADD-03:** **EXIF Data Signature (for images):**
