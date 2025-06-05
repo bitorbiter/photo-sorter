@@ -242,8 +242,9 @@ func main() {
 		// Ensure that if processThisFile is true, we actually proceed.
 		// The if processThisFile { filesToCopyCount++ ... } block should follow directly.
 
-		// This is where the original `if processThisFile {` block content starts
-		filesToCopyCount++
+		// Now, if processThisFile is true, proceed with copying.
+		if processThisFile {
+			filesToCopyCount++
 
 			var photoDate time.Time
 			var dateSource string
