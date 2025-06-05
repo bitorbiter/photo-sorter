@@ -52,6 +52,8 @@ func createDummyGIF(t *testing.T, path string, width, height int, c color.Color)
 	}
 }
 
+// TestCalculateFileHash tests the full file content hashing.
+// Covers: REQ-CF-ADD-06, REQ-CF-ADD-07, REQ-CF-ADD-08
 func TestCalculateFileHash(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -129,6 +131,8 @@ func createDummyPNG(t *testing.T, path string, width, height int, c color.Color)
 	}
 }
 
+// TestGetImageResolution tests fetching image dimensions.
+// Covers: REQ-CF-DR-02
 func TestGetImageResolution(t *testing.T) {
 	tmpDir := t.TempDir()
 
@@ -199,6 +203,9 @@ func TestGetImageResolution(t *testing.T) {
 	}
 }
 
+// TestCalculatePixelDataHash tests the pixel data hashing.
+// Covers: REQ-CF-ADD-03, REQ-CF-ADD-04, REQ-CF-ADD-05
+// Also implicitly covers aspects of REQ-CF-ADD-07 for error handling.
 func TestCalculatePixelDataHash(t *testing.T) {
 	tmpDir := t.TempDir()
 	color1 := color.RGBA{100, 150, 200, 255}
