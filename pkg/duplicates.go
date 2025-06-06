@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	ReasonSizeMismatch            = "size_mismatch"
+	ReasonSizeMismatch          = "size_mismatch"
 	ReasonExifMismatch          = "exif_mismatch"
 	ReasonPixelHashMatch        = "pixel_hash_match"
 	ReasonPixelHashMismatch     = "pixel_hash_mismatch"
@@ -223,7 +223,6 @@ func AreFilesPotentiallyDuplicate(filePath1, filePath2 string) (ComparisonResult
 		return result, nil
 	}
 
-
 	// 2. Determine if files are images
 	isImg1 := IsImageExtension(filePath1)
 	isImg2 := IsImageExtension(filePath2)
@@ -275,7 +274,7 @@ func AreFilesPotentiallyDuplicate(filePath1, filePath2 string) (ComparisonResult
 			} else if strings.Contains(errPx2.Error(), ErrUnsupportedForPixelHashing.Error()) {
 				// filePath1 pixel hashed, but filePath2 is unsupported. Fallback to full file hash for both.
 				fmt.Printf("Info: Pixel hash for %s succeeded, but unsupported for %s. Falling back to file hash.\n", filePath1, filePath2)
-				result.HashType = HashTypeFile // Fallback path
+				result.HashType = HashTypeFile              // Fallback path
 				result.Reason = ReasonPixelHashNotAttempted // Reset reason before full hash
 			} else { // filePath1 pixel hashed, but filePath2 had another error.
 				result.Reason = ReasonError
@@ -284,7 +283,7 @@ func AreFilesPotentiallyDuplicate(filePath1, filePath2 string) (ComparisonResult
 		} else if strings.Contains(errPx1.Error(), ErrUnsupportedForPixelHashing.Error()) {
 			// Pixel hashing filePath1 was unsupported. Fallback to full file hash for both.
 			fmt.Printf("Info: Pixel hash unsupported for %s. Falling back to file hash.\n", filePath1)
-			result.HashType = HashTypeFile // Fallback path
+			result.HashType = HashTypeFile              // Fallback path
 			result.Reason = ReasonPixelHashNotAttempted // Reset reason
 		} else { // filePath1 had a critical error during pixel hashing (not 'unsupported')
 			result.Reason = ReasonError

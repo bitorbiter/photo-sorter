@@ -134,7 +134,7 @@ func TestRunApplicationLogic_SourceToEmptyTarget_DirectCopy(t *testing.T) {
 	}
 	createTestFiles(t, sourceDir, sourceFiles)
 
-	processed, copied, filesToCopy, duplicates, unsupported, err := runApplicationLogic(sourceDir, targetDir)
+	processed, copied, filesToCopy, duplicates, unsupported, err := runApplicationLogic(sourceDir, targetDir, false) // Added verbose=false
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, processed, "Should have processed 1 file")
@@ -142,7 +142,6 @@ func TestRunApplicationLogic_SourceToEmptyTarget_DirectCopy(t *testing.T) {
 	assert.Equal(t, 1, filesToCopy, "Files to copy should be 1") // In new logic, filesToCopy == copied
 	assert.Len(t, duplicates, 0, "Should be no duplicates")
 	assert.Equal(t, 0, unsupported, "No unsupported pixel hashes expected for valid PNG")
-
 
 	expectedTargetPath := filepath.Join(targetDir, "2023", "11", "2023-11-15-100000.png")
 	_, statErr := os.Stat(expectedTargetPath)
@@ -172,8 +171,7 @@ func TestRunApplicationLogic_SourceHasTwoIdenticalFiles_TargetEmpty(t *testing.T
 	fullSourceFile1Path := filepath.Join(sourceDir, sourceFile1Path)
 	fullSourceFile2Path := filepath.Join(sourceDir, sourceFile2Path)
 
-
-	processed, copied, filesToCopy, duplicates, _, err := runApplicationLogic(sourceDir, targetDir)
+	processed, copied, filesToCopy, duplicates, _, err := runApplicationLogic(sourceDir, targetDir, false) // Added verbose=false
 	require.NoError(t, err)
 
 	assert.Equal(t, 2, processed, "Should have processed 2 files")
@@ -218,9 +216,7 @@ func TestRunApplicationLogic_SourceHasTwoIdenticalFiles_TargetEmpty(t *testing.T
 	// And that the KeptFile is the single copied file.
 	assert.Contains(t, []string{fullSourceFile1Path, fullSourceFile2Path}, duplicates[0].DiscardedFile, "Discarded file should be one of the original source paths")
 
-
 	assert.Contains(t, duplicates[0].Reason, pkg.ReasonPixelHashMatch, "Reason should indicate a pixel hash match")
-
 
 	_, statErr := os.Stat(expectedTargetFilePath)
 	assert.NoError(t, statErr, "Expected target file %s (copy of the first source file) to exist", expectedTargetFilePath)
@@ -253,7 +249,7 @@ func TestRunApplicationLogic_TargetExists_SourceDifferentContent_TargetPreserved
 	createTestFiles(t, sourceDir, sourceFiles)
 	fullSourceFilePath := filepath.Join(sourceDir, sourceFiles[0].Path)
 
-	processed, copied, filesToCopy, duplicates, _, err := runApplicationLogic(sourceDir, targetDir)
+	processed, copied, filesToCopy, duplicates, _, err := runApplicationLogic(sourceDir, targetDir, false) // Added verbose=false
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, processed, "Should have processed 1 file")
@@ -265,7 +261,6 @@ func TestRunApplicationLogic_TargetExists_SourceDifferentContent_TargetPreserved
 	assert.Equal(t, fullSourceFilePath, duplicates[0].DiscardedFile)
 	// In main.go, if AreFilesPotentiallyDuplicate is false for a name collision, this reason is used.
 	assert.Equal(t, "Content different, but name collision; existing target preserved", duplicates[0].Reason)
-
 
 	_, statErr := os.Stat(expectedTargetFilePath) // Original target
 	assert.NoError(t, statErr, "Target file should still exist and be unchanged")
@@ -303,8 +298,7 @@ func TestRunApplicationLogic_TargetExists_SourceDifferentContent_TargetPreserved
 	createTestFiles(t, sourceDir, sourceFiles)
 	fullSourceFilePath := filepath.Join(sourceDir, sourceFiles[0].Path)
 
-
-	processed, copied, filesToCopy, duplicates, _, err := runApplicationLogic(sourceDir, targetDir)
+	processed, copied, filesToCopy, duplicates, _, err := runApplicationLogic(sourceDir, targetDir, false) // Added verbose=false
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, processed, "Should have processed 1 file")
@@ -315,7 +309,6 @@ func TestRunApplicationLogic_TargetExists_SourceDifferentContent_TargetPreserved
 	assert.Equal(t, expectedTargetFilePath, duplicates[0].KeptFile)
 	assert.Equal(t, fullSourceFilePath, duplicates[0].DiscardedFile)
 	assert.Equal(t, "Content different, but name collision; existing target preserved", duplicates[0].Reason)
-
 
 	_, statErr := os.Stat(expectedTargetFilePath) // Original target
 	assert.NoError(t, statErr, "Original target file should still exist and be unchanged")
@@ -328,7 +321,6 @@ func TestRunApplicationLogic_TargetExists_SourceDifferentContent_TargetPreserved
 	dirEntries, _ := os.ReadDir(targetMonthDir)
 	assert.Len(t, dirEntries, 1, "Only the original target file should be in the target month directory")
 }
-
 
 // TestRunApplicationLogic_TargetExists_SourceDifferentFileSameName tests that if files map to the same target path but are different content (not duplicates),
 // the existing target is preserved and the source is discarded. (No versioning with current main.go logic for this case).
@@ -352,8 +344,7 @@ func TestRunApplicationLogic_TargetExists_SourceDifferentFileSameName(t *testing
 	createTestFiles(t, sourceDir, sourceFiles)
 	fullSourceFilePath := filepath.Join(sourceDir, sourceFiles[0].Path)
 
-
-	processed, copied, filesToCopy, duplicates, _, err := runApplicationLogic(sourceDir, targetDir)
+	processed, copied, filesToCopy, duplicates, _, err := runApplicationLogic(sourceDir, targetDir, false) // Added verbose=false
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, processed, "Should have processed 1 file")
@@ -364,7 +355,6 @@ func TestRunApplicationLogic_TargetExists_SourceDifferentFileSameName(t *testing
 	assert.Equal(t, expectedTargetFilePath, duplicates[0].KeptFile)
 	assert.Equal(t, fullSourceFilePath, duplicates[0].DiscardedFile)
 	assert.Equal(t, "Content different, but name collision; existing target preserved", duplicates[0].Reason)
-
 
 	_, statErr := os.Stat(expectedTargetFilePath)
 	assert.NoError(t, statErr, "Original target file should still exist and be unchanged")
@@ -378,82 +368,78 @@ func TestRunApplicationLogic_TargetExists_SourceDifferentFileSameName(t *testing
 	assert.Len(t, dirEntries, 1, "Only the original target file should be in the target month directory")
 }
 
-
 // TestRunApplicationLogic_PixelHashUnsupported_FallbackToFileHash tests fallback to file hash for non-image files.
 func TestRunApplicationLogic_PixelHashUnsupported_FallbackToFileHash(t *testing.T) {
-    sourceDir, targetDir := setupTestDirs(t)
-    photoTime := time.Date(2024, 1, 10, 10, 0, 0, 0, time.UTC)
+	sourceDir, targetDir := setupTestDirs(t)
+	photoTime := time.Date(2024, 1, 10, 10, 0, 0, 0, time.UTC)
 
-    // Target: A PNG file with text content (will fail pixel hash, fallback to file hash)
-    targetContent := []byte("This is target file T1 masquerading as PNG.")
-    targetFiles := []fileSpec{
-        {Path: filepath.Join("2024", "01", "2024-01-10-100000.png"), Content: targetContent, ModTime: photoTime},
-    }
-    createTestFiles(t, targetDir, targetFiles)
-    expectedTargetFilePath := filepath.Join(targetDir, targetFiles[0].Path)
+	// Target: A PNG file with text content (will fail pixel hash, fallback to file hash)
+	targetContent := []byte("This is target file T1 masquerading as PNG.")
+	targetFiles := []fileSpec{
+		{Path: filepath.Join("2024", "01", "2024-01-10-100000.png"), Content: targetContent, ModTime: photoTime},
+	}
+	createTestFiles(t, targetDir, targetFiles)
+	expectedTargetFilePath := filepath.Join(targetDir, targetFiles[0].Path)
 
-    // Source: A PNG file with identical text content (will be file hash duplicate)
-    sourceFiles := []fileSpec{
-        {Path: "S1.png", Content: targetContent, ModTime: photoTime},
-    }
-    createTestFiles(t, sourceDir, sourceFiles)
-    sourceFilePathS1 := filepath.Join(sourceDir, sourceFiles[0].Path)
+	// Source: A PNG file with identical text content (will be file hash duplicate)
+	sourceFiles := []fileSpec{
+		{Path: "S1.png", Content: targetContent, ModTime: photoTime},
+	}
+	createTestFiles(t, sourceDir, sourceFiles)
+	sourceFilePathS1 := filepath.Join(sourceDir, sourceFiles[0].Path)
 
-    // Source: Another PNG file with different text content
-    sourceContentS2 := []byte("This is source file S2, different content, also as PNG.")
-    sourceFilesS2Spec := []fileSpec{
-        {Path: "S2.png", Content: sourceContentS2, ModTime: photoTime}, // Same date, maps to same exact target path initially
-    }
-    createTestFiles(t, sourceDir, sourceFilesS2Spec)
-    sourceFilePathS2 := filepath.Join(sourceDir, sourceFilesS2Spec[0].Path)
+	// Source: Another PNG file with different text content
+	sourceContentS2 := []byte("This is source file S2, different content, also as PNG.")
+	sourceFilesS2Spec := []fileSpec{
+		{Path: "S2.png", Content: sourceContentS2, ModTime: photoTime}, // Same date, maps to same exact target path initially
+	}
+	createTestFiles(t, sourceDir, sourceFilesS2Spec)
+	sourceFilePathS2 := filepath.Join(sourceDir, sourceFilesS2Spec[0].Path)
 
+	processed, copied, filesToCopy, duplicates, unsupported, err := runApplicationLogic(sourceDir, targetDir, false) // Added verbose=false
+	require.NoError(t, err)
 
-    processed, copied, filesToCopy, duplicates, unsupported, err := runApplicationLogic(sourceDir, targetDir)
-    require.NoError(t, err)
+	// S1.png (source) vs T1.png (target at exactTargetPath) -> FileHashMatch, S1 discarded.
+	// S2.png (source) vs T1.png (target at exactTargetPath) -> Content different (AreFilesPotentiallyDuplicate=false), S2 discarded.
+	assert.Equal(t, 2, processed, "Should process 2 source files")
+	assert.Equal(t, 0, copied, "Should have copied 0 files")
+	assert.Equal(t, 0, filesToCopy, "Files to copy should be 0")
+	require.Len(t, duplicates, 2, "Should be 2 duplicate entries (S1.png vs T1.png, and S2.png vs T1.png)")
 
-    // S1.png (source) vs T1.png (target at exactTargetPath) -> FileHashMatch, S1 discarded.
-    // S2.png (source) vs T1.png (target at exactTargetPath) -> Content different (AreFilesPotentiallyDuplicate=false), S2 discarded.
-    assert.Equal(t, 2, processed, "Should process 2 source files")
-    assert.Equal(t, 0, copied, "Should have copied 0 files")
-    assert.Equal(t, 0, filesToCopy, "Files to copy should be 0")
-    require.Len(t, duplicates, 2, "Should be 2 duplicate entries (S1.png vs T1.png, and S2.png vs T1.png)")
+	// Both S1.png and S2.png are source files with ".png" extension.
+	// Pixel hashing will be attempted and will fail (text content).
+	// So, both S1.png and S2.png will use file hash for comparison against the target (or try to).
+	// S1 will use file hash. S2 comparison might also note file hash was attempted if it got that far.
+	// The `sourceFilesThatUsedFileHash` map in main.go gets populated if `compResult.HashType == pkg.HashTypeFile`.
+	// For S1 vs T1, compResult.HashType will be FileHash.
+	// For S2 vs T1, compResult.AreDuplicates is false. HashType might still be FileHash if comparison reached that stage.
+	assert.Equal(t, 2, unsupported, "Pixel hash unsupported should be 2 (for S1.png and S2.png as they are image types but will fail pixel decoding and attempt file hash)")
 
-    // Both S1.png and S2.png are source files with ".png" extension.
-    // Pixel hashing will be attempted and will fail (text content).
-    // So, both S1.png and S2.png will use file hash for comparison against the target (or try to).
-    // S1 will use file hash. S2 comparison might also note file hash was attempted if it got that far.
-    // The `sourceFilesThatUsedFileHash` map in main.go gets populated if `compResult.HashType == pkg.HashTypeFile`.
-    // For S1 vs T1, compResult.HashType will be FileHash.
-    // For S2 vs T1, compResult.AreDuplicates is false. HashType might still be FileHash if comparison reached that stage.
-    assert.Equal(t, 2, unsupported, "Pixel hash unsupported should be 2 (for S1.png and S2.png as they are image types but will fail pixel decoding and attempt file hash)")
+	// Check duplicate entry for S1.png
+	dupS1Found := false
+	dupS2Found := false
+	for _, dup := range duplicates {
+		if dup.DiscardedFile == sourceFilePathS1 {
+			assert.Equal(t, expectedTargetFilePath, dup.KeptFile)
+			assert.Equal(t, pkg.ReasonFileHashMatch+" (existing target kept)", dup.Reason, "S1 should be a file hash match with T1")
+			dupS1Found = true
+		} else if dup.DiscardedFile == sourceFilePathS2 {
+			assert.Equal(t, expectedTargetFilePath, dup.KeptFile)
+			assert.Equal(t, "Content different, but name collision; existing target preserved", dup.Reason, "S2 should be discarded as different content with name collision")
+			dupS2Found = true
+		}
+	}
+	assert.True(t, dupS1Found, "Duplicate entry for S1 not found or incorrect")
+	assert.True(t, dupS2Found, "Duplicate entry for S2 not found or incorrect")
 
-    // Check duplicate entry for S1.png
-    dupS1Found := false
-    dupS2Found := false
-    for _, dup := range duplicates {
-        if dup.DiscardedFile == sourceFilePathS1 {
-            assert.Equal(t, expectedTargetFilePath, dup.KeptFile)
-            assert.Equal(t, pkg.ReasonFileHashMatch+" (existing target kept)", dup.Reason, "S1 should be a file hash match with T1")
-            dupS1Found = true
-        } else if dup.DiscardedFile == sourceFilePathS2 {
-            assert.Equal(t, expectedTargetFilePath, dup.KeptFile)
-            assert.Equal(t, "Content different, but name collision; existing target preserved", dup.Reason, "S2 should be discarded as different content with name collision")
-            dupS2Found = true
-        }
-    }
-    assert.True(t, dupS1Found, "Duplicate entry for S1 not found or incorrect")
-    assert.True(t, dupS2Found, "Duplicate entry for S2 not found or incorrect")
+	_, statErr := os.Stat(expectedTargetFilePath) // T1
+	assert.NoError(t, statErr, "Target file T1 should still exist")
 
-
-    _, statErr := os.Stat(expectedTargetFilePath) // T1
-    assert.NoError(t, statErr, "Target file T1 should still exist")
-
-    // No files should have been copied to target (S1 was duplicate, S2 was different but discarded)
-    targetMonthDir := filepath.Join(targetDir, "2024", "01")
-    dirEntries, _ := os.ReadDir(targetMonthDir)
-    assert.Len(t, dirEntries, 1, "Only the original target file T1 should be in the target month directory")
+	// No files should have been copied to target (S1 was duplicate, S2 was different but discarded)
+	targetMonthDir := filepath.Join(targetDir, "2024", "01")
+	dirEntries, _ := os.ReadDir(targetMonthDir)
+	assert.Len(t, dirEntries, 1, "Only the original target file T1 should be in the target month directory")
 }
-
 
 // TestRunApplicationLogic_SourceConflictsWithIdenticalTarget_MarkedDuplicate tests that a source file
 // identical to an existing target file (same content, same name via date) is marked as a duplicate.
@@ -476,7 +462,7 @@ func TestRunApplicationLogic_SourceConflictsWithIdenticalTarget_MarkedDuplicate(
 	createTestFiles(t, sourceDir, sourceFiles)
 	fullSourceFilePath := filepath.Join(sourceDir, sourceFiles[0].Path)
 
-	processed, copied, filesToCopy, duplicates, unsupported, err := runApplicationLogic(sourceDir, targetDir)
+	processed, copied, filesToCopy, duplicates, unsupported, err := runApplicationLogic(sourceDir, targetDir, false) // Added verbose=false
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, processed, "Should have processed 1 file")
@@ -485,13 +471,11 @@ func TestRunApplicationLogic_SourceConflictsWithIdenticalTarget_MarkedDuplicate(
 	require.Len(t, duplicates, 1, "Should be 1 duplicate entry")
 	assert.Equal(t, 0, unsupported, "No unsupported pixel hash for valid identical PNGs")
 
-
 	dup := duplicates[0]
 	assert.Equal(t, expectedTargetFilePath, dup.KeptFile)
 	assert.Equal(t, fullSourceFilePath, dup.DiscardedFile)
 	// Since they are identical PNGs, it should be a pixel hash match.
 	assert.Contains(t, dup.Reason, pkg.ReasonPixelHashMatch)
-
 
 	_, statErr := os.Stat(expectedTargetFilePath)
 	assert.NoError(t, statErr, "Target file should still exist")
@@ -504,7 +488,6 @@ func TestRunApplicationLogic_SourceConflictsWithIdenticalTarget_MarkedDuplicate(
 	dirEntries, _ := os.ReadDir(targetMonthDir)
 	assert.Len(t, dirEntries, 1, "Only the original target file should be in the target month directory")
 }
-
 
 // TestRunApplicationLogic_SequentialSourceToSameTarget tests processing multiple source files that map to the same target path.
 // S1 (original) -> copied to targetFile.png
@@ -522,9 +505,9 @@ func TestRunApplicationLogic_SequentialSourceToSameTarget(t *testing.T) {
 	// by naming files alphabetically or relying on Go's file walk order (usually alphabetical).
 	// For this test, file names s1, s2, s3 should lead to that processing order.
 	sourceFiles := []fileSpec{
-		{Path: s1Path, Content: pngMinimal_2x2_A, ModTime: photoTime},      // S1 - Content A
-		{Path: s2Path, Content: pngMinimal_2x2_B, ModTime: photoTime},      // S2 - Content B (different from A)
-		{Path: s3Path, Content: pngMinimal_2x2_A, ModTime: photoTime},      // S3 - Content A (same as S1)
+		{Path: s1Path, Content: pngMinimal_2x2_A, ModTime: photoTime}, // S1 - Content A
+		{Path: s2Path, Content: pngMinimal_2x2_B, ModTime: photoTime}, // S2 - Content B (different from A)
+		{Path: s3Path, Content: pngMinimal_2x2_A, ModTime: photoTime}, // S3 - Content A (same as S1)
 	}
 	createTestFiles(t, sourceDir, sourceFiles)
 
@@ -535,7 +518,7 @@ func TestRunApplicationLogic_SequentialSourceToSameTarget(t *testing.T) {
 	// Expected target path for S1 (and where S2, S3 will also initially map)
 	expectedTargetForS1 := filepath.Join(targetDir, "2024", "03", "2024-03-10-090000.png")
 
-	processed, copied, filesToCopy, duplicates, unsupported, err := runApplicationLogic(sourceDir, targetDir)
+	processed, copied, filesToCopy, duplicates, unsupported, err := runApplicationLogic(sourceDir, targetDir, false) // Added verbose=false
 	require.NoError(t, err)
 
 	assert.Equal(t, 3, processed, "Should process 3 source files")
@@ -566,7 +549,6 @@ func TestRunApplicationLogic_SequentialSourceToSameTarget(t *testing.T) {
 	assert.True(t, s2Discarded, "S2 should be in discarded list")
 	assert.True(t, s3Discarded, "S3 should be in discarded list")
 
-
 	targetMonthDir := filepath.Join(targetDir, "2024", "03")
 	dirEntries, _ := os.ReadDir(targetMonthDir)
 	assert.Len(t, dirEntries, 1, "Only S1's copy should be in the target directory")
@@ -581,7 +563,6 @@ func TestRunApplicationLogic_SequentialSourceToSameTarget(t *testing.T) {
 	// 	t.Logf("Found in source: %s (dir: %t)", path, info.IsDir()); return nil
 	// })
 }
-
 
 // TODO: Add more tests:
 // - Pixel hash unsupported for an actual image type (e.g. if pkg.IsImageExtension says true, but image.Decode fails or it's a format not in stdlib image decoders)
@@ -610,7 +591,7 @@ func TestRunApplicationLogic_HEICSupport(t *testing.T) {
 	}
 	createTestFiles(t, sourceDir, sourceFiles)
 
-	processed, copied, filesToCopy, duplicates, pixelHashUnsupported, err := runApplicationLogic(sourceDir, targetDir)
+	processed, copied, filesToCopy, duplicates, pixelHashUnsupported, err := runApplicationLogic(sourceDir, targetDir, false) // Added verbose=false
 	require.NoError(t, err, "runApplicationLogic should not error for HEIC file")
 
 	assert.Equal(t, 1, processed, "Should have processed 1 HEIC file")
@@ -656,5 +637,6 @@ func TestRunApplicationLogic_HEICSupport(t *testing.T) {
 	assert.Contains(t, reportStr, "Files successfully copied: 1", "Report: Files Copied count incorrect")
 	assert.Contains(t, reportStr, "Duplicate files found and discarded/skipped: 0", "Report: Duplicates Found count incorrect")
 	// Based on the corrected understanding, pixelHashUnsupported should be 0 for this test case.
-	assert.Contains(t, reportStr, "Files where pixel hashing was not supported (fallback to file hash): 0", "Report: Pixel Hash Unsupported count incorrect")
+	// Also ensure the report text matches the change from "Files where..." to "Image files where..."
+	assert.Contains(t, reportStr, "Image files where pixel hashing was not supported (fallback to file hash): 0", "Report: Pixel Hash Unsupported count incorrect")
 }
