@@ -56,10 +56,10 @@ func TestGenerateReport(t *testing.T) {
 			expectErr:                 false,
 			expectedSubstrings: []string{
 				"Total files scanned: 10",
-				"Files identified for copying (unique or better): 7",
+				// "Files identified for copying (unique or better): 7", // This line is removed from the report
 				"Files successfully copied: 5",
 				"Duplicate files found and discarded/skipped: 2",
-				"Files where pixel hashing was not supported (fallback to file hash): 1",
+				"Image files where pixel hashing was not supported (fallback to file hash): 1",
 				"Kept: path/to/kept1.jpg",
 				"Discarded: path/to/discarded1.jpg",
 				"Reason: Higher resolution",
@@ -79,10 +79,10 @@ func TestGenerateReport(t *testing.T) {
 			expectErr:                 false,
 			expectedSubstrings: []string{
 				"Total files scanned: 8",
-				"Files identified for copying (unique or better): 8",
+				// "Files identified for copying (unique or better): 8", // This line is removed from the report
 				"Files successfully copied: 8",
 				"Duplicate files found and discarded/skipped: 0",
-				"Files where pixel hashing was not supported (fallback to file hash): 0",
+				"Image files where pixel hashing was not supported (fallback to file hash): 0",
 			},
 		},
 		{
