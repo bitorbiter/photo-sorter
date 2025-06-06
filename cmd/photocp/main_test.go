@@ -433,7 +433,7 @@ func TestRunApplicationLogic_PixelHashUnsupported_FallbackToFileHash(t *testing.
     for _, dup := range duplicates {
         if dup.DiscardedFile == sourceFilePathS1 {
             assert.Equal(t, expectedTargetFilePath, dup.KeptFile)
-            assert.Equal(t, pkg.ReasonFileHashMatch, dup.Reason, "S1 should be a file hash match with T1")
+            assert.Equal(t, pkg.ReasonFileHashMatch+" (existing target kept)", dup.Reason, "S1 should be a file hash match with T1")
             dupS1Found = true
         } else if dup.DiscardedFile == sourceFilePathS2 {
             assert.Equal(t, expectedTargetFilePath, dup.KeptFile)
