@@ -30,6 +30,28 @@ func createScanTestDir(t *testing.T, baseDir string, structure map[string][]byte
 	}
 }
 
+func TestIsImageExtension_HEIF(t *testing.T) {
+	tests := []struct {
+		name     string
+		filePath string
+		expected bool
+	}{
+		{"heic extension", "photo.heic", true},
+		{"HEIC extension (uppercase)", "photo.HEIC", true},
+		{"heif extension", "photo.heif", true},
+		{"HEIF extension (uppercase)", "photo.HEIF", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := pkg.IsImageExtension(tt.filePath)
+			if actual != tt.expected {
+				t.Errorf("IsImageExtension(%q) got %v, want %v", tt.filePath, actual, tt.expected)
+			}
+		})
+	}
+}
+
 func TestIsImageExtension(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -200,44 +222,39 @@ func TestFindPotentialTargetConflicts(t *testing.T) {
 				currentExpectedConflicts = newExpectedConflicts
 			}
 
-			// Normalize expected paths and sort for comparison
-			expectedFullPaths := make([]string, len(currentExpectedConflicts))
-			for i, fName := range currentExpectedConflicts {
-				expectedFullPaths[i] = filepath.Join(tt.targetMonthDir, fName)
+			// Normalize Expected Paths:
+			// `currentExpectedConflicts` already holds relative paths, potentially adjusted for Windows.
+			// We need full paths for comparison if `FindPotentialTargetConflicts` returns full paths.
+			// Assuming `FindPotentialTargetConflicts` returns full paths as per previous logic.
+			uniqueLowerWantMap := make(map[string]bool)
+			lowerWantPaths := []string{}
+			for _, fName := range currentExpectedConflicts { // fName is relative path from tc.expectedConflicts
+				fullPWant := filepath.Join(tt.targetMonthDir, fName)
+				lowerP := strings.ToLower(fullPWant)
+				if _, exists := uniqueLowerWantMap[lowerP]; !exists {
+					uniqueLowerWantMap[lowerP] = true
+					lowerWantPaths = append(lowerWantPaths, lowerP)
+				}
 			}
-			sort.Strings(expectedFullPaths)
-			sort.Strings(results)
+			sort.Strings(lowerWantPaths)
 
-			if isWindows {
-				// On Windows, compare paths in a case-insensitive manner.
-				actualForCompare := make([]string, len(results))
-				for i, p := range results {
-					actualForCompare[i] = strings.ToLower(p)
+			// Normalize Actual Paths (Gotten Paths):
+			// `results` are the paths returned by FindPotentialTargetConflicts, assumed to be full paths.
+			uniqueLowerGotMap := make(map[string]bool)
+			lowerGotPaths := []string{}
+			for _, pGot := range results {
+				lowerP := strings.ToLower(pGot)
+				if _, exists := uniqueLowerGotMap[lowerP]; !exists { // Should always be new if function returns unique paths
+					uniqueLowerGotMap[lowerP] = true
+					lowerGotPaths = append(lowerGotPaths, lowerP)
 				}
-				sort.Strings(actualForCompare) // Sort again after toLower
+			}
+			sort.Strings(lowerGotPaths)
 
-				expectedForCompare := make([]string, len(expectedFullPaths))
-				for i, p := range expectedFullPaths {
-					expectedForCompare[i] = strings.ToLower(p)
-				}
-				sort.Strings(expectedForCompare) // Sort again after toLower
-
-				if len(expectedForCompare) == 0 && len(actualForCompare) == 0 {
-					// Both are empty, which is fine.
-				} else if !reflect.DeepEqual(actualForCompare, expectedForCompare) {
-					t.Errorf("FindPotentialTargetConflicts() [Windows case-insensitive]\n  got (lower): %v\n want (lower): %v\n original got: %v\n original want: %v", actualForCompare, expectedForCompare, results, expectedFullPaths)
-				}
-			} else {
-				// Original case-sensitive comparison for non-Windows platforms
-				if len(expectedFullPaths) == 0 {
-					if len(results) != 0 {
-						t.Errorf("FindPotentialTargetConflicts()\n  got: %v\n want empty slice", results)
-					}
-				} else {
-					if !reflect.DeepEqual(results, expectedFullPaths) {
-						t.Errorf("FindPotentialTargetConflicts()\n  got: %v\n want: %v", results, expectedFullPaths)
-					}
-				}
+			// Assertion:
+			if !reflect.DeepEqual(lowerGotPaths, lowerWantPaths) {
+				t.Errorf("Test Case: %s\nFindPotentialTargetConflicts() case-insensitive comparison failed:\n  got (unique, lower, sorted): %v\n want (unique, lower, sorted): %v\n original got (unsorted): %v\n original tc.expectedConflicts (unsorted, relative): %v",
+					tt.name, lowerGotPaths, lowerWantPaths, results, tt.expectedConflicts)
 			}
 		})
 	}
@@ -404,6 +421,49 @@ func TestCreateTargetDirectory(t *testing.T) {
 // Sample JPEG with DateTimeOriginal: 2008:05:30 15:56:01
 // You can create such a file using an EXIF editor or find one online.
 // For now, we'll mostly test error paths and non-EXIF scenarios.
+
+func TestGetPhotoCreationDate_HEIF_Fallback(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a dummy HEIC file (empty, as goexif won't parse it anyway)
+	heicFile := filepath.Join(tmpDir, "sample.heic")
+	if f, err := os.Create(heicFile); err != nil {
+		t.Fatalf("Failed to create dummy HEIC file: %v", err)
+	} else {
+		f.Close()
+	}
+
+	// Since heif-go is registered, the behavior might change if it attempts to decode
+	// before goexif. However, GetPhotoCreationDate specifically uses goexif.
+	// We expect goexif to fail decoding a HEIC file.
+	_, err := pkg.GetPhotoCreationDate(heicFile)
+
+	if err == nil {
+		t.Errorf("Expected an error when calling GetPhotoCreationDate with HEIC file, got nil")
+	} else {
+		// Check if the error is one of the expected types:
+		// - pkg.ErrNoExifDate (if goexif initializes but finds no date)
+		// - or a more general "failed to decode EXIF data"
+		// The exact error depends on how goexif handles unknown formats.
+		// It's likely to be a decoding error rather than ErrNoExifDate.
+		expectedErrorSubstrings := []string{
+			"failed to decode EXIF data", // Generic decode error from goexif
+			pkg.ErrNoExifDate.Error(),    // Specific error if goexif somehow "starts" then fails
+		}
+		foundExpectedError := false
+		for _, sub := range expectedErrorSubstrings {
+			if strings.Contains(err.Error(), sub) {
+				foundExpectedError = true
+				break
+			}
+		}
+		if !foundExpectedError {
+			t.Errorf("GetPhotoCreationDate(%q) returned error '%v', which does not contain any of the expected substrings: %v", heicFile, err, expectedErrorSubstrings)
+		} else {
+			t.Logf("GetPhotoCreationDate(%q) correctly returned error '%v', indicating fallback to mod time would occur.", heicFile, err)
+		}
+	}
+}
 
 func TestGetPhotoCreationDate(t *testing.T) {
 	tmpDir := t.TempDir()

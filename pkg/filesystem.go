@@ -18,6 +18,8 @@ var imageExtensions = map[string]bool{
 	".jpg":  true,
 	".jpeg": true,
 	".png":  true,
+	".heic": true,
+	".heif": true,
 	".gif":  true,
 	".raw":  true,
 	".cr2":  true,

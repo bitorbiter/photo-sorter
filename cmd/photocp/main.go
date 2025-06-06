@@ -12,6 +12,7 @@ import (
 	_ "image/gif"  // Register GIF decoder
 	_ "image/jpeg" // Register JPEG decoder
 	_ "image/png"  // Register PNG decoder
+	_ "github.com/vegidio/heif-go" // Register HEIF/HEVC decoder
 
 	"github.com/user/photo-sorter/pkg"
 )
@@ -304,7 +305,7 @@ func runApplicationLogic(sourceDir string, targetBaseDir string) (processedFiles
 // This is the main application entry point.
 func main() {
 	// --- Command-line flags ---
-	sourceDirFlag := flag.String("sourceDir", "", "Source directory containing photos to sort (required)")
+	sourceDirFlag := flag.String("sourceDir", "", "Source directory containing photos to sort (e.g., common formats like JPG, PNG, GIF, HEIC, and various RAW types) (required)")
 	targetDirFlag := flag.String("targetDir", "", "Target directory to store sorted photos (required)")
 	helpFlg := flag.Bool("help", false, "Show help message and license information")
 	flag.Parse()
@@ -323,6 +324,10 @@ func main() {
 		fmt.Println("    - Purpose: Used to extract EXIF data from image files.")
 		fmt.Println("    - License: BSD 2-Clause \"Simplified\" License")
 		fmt.Println("    - Copyright: Copyright (c) 2012, Robert Carlsen & Contributors")
+		fmt.Println("  - heif-go (github.com/vegidio/heif-go)")
+		fmt.Println("    - Purpose: Used to decode HEIF/HEIC image files.")
+		fmt.Println("    - License: MIT License")
+		fmt.Println("    - Copyright: Copyright (c) Vinicius Egidio")
 		fmt.Println("\n  Indirect Dependencies:")
 		fmt.Println("    These libraries are included by direct dependencies or the testing framework.")
 		fmt.Println("  - go-spew (github.com/davecgh/go-spew)")

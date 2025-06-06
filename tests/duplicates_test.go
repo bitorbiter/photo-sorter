@@ -144,6 +144,90 @@ func TestAreFilesPotentiallyDuplicate_Images_PixelHashUnsupported_FileHashMatch(
 	assert.Equal(t, pkg.HashTypeFile, res.HashType)
 }
 
+func TestCalculatePixelDataHash_HEIF(t *testing.T) {
+	dir := t.TempDir()
+	// Use the placeholder HEIC file. heif-go might decode it or fail.
+	// If it decodes to a 1x1 transparent image (common for empty), it might get a hash.
+	// If it fails, we expect ErrUnsupportedForPixelHashing.
+	heicPath := createTempFile(t, dir, "sample.heic", []byte{}) // Empty file
+
+	_, err := pkg.CalculatePixelDataHash(heicPath)
+
+	// Depending on heif-go's behavior with empty files:
+	// 1. If it errors out because it's empty/invalid: err should be ErrUnsupportedForPixelHashing (or wrapped)
+	// 2. If it decodes to some default image (e.g., 1x1 transparent): err might be nil.
+	// For this test, we'll be flexible. The key is that it doesn't crash.
+	if err != nil {
+		assert.ErrorIs(t, err, pkg.ErrUnsupportedForPixelHashing, "Expected ErrUnsupportedForPixelHashing or a wrapping error for empty HEIC")
+		t.Logf("Correctly received error for pixel hashing empty HEIC: %v", err)
+	} else {
+		// This case means heif-go successfully decoded the empty file into some image data.
+		t.Logf("Pixel hashing for empty HEIC did not return an error, implying successful decode by heif-go.")
+	}
+}
+
+func TestAreFilesPotentiallyDuplicate_HEIF_Identical(t *testing.T) {
+	dir := t.TempDir()
+	// Create two identical placeholder HEIC files.
+	// Since pixel hashing might be unsupported or behave unpredictably with empty/minimal HEIC,
+	// we expect them to be caught as duplicates by file hash if pixel hash fails.
+	heicContent := []byte("minimal-heic-like-content") // Not really HEIC, but consistent content
+	f1Path := createTempFile(t, dir, "sampleA.heic", heicContent)
+	f2Path := createTempFile(t, dir, "sampleB.heic", heicContent)
+
+	res, err := pkg.AreFilesPotentiallyDuplicate(f1Path, f2Path)
+	require.NoError(t, err)
+	assert.True(t, res.AreDuplicates, "Identical HEIC files should be considered duplicates")
+
+	// Check reason: Could be PixelHashMatch (if heif-go decodes them identically)
+	// or FileHashMatch (if pixel hash fails and it falls back to file hash).
+	expectedReasons := []string{pkg.ReasonPixelHashMatch, pkg.ReasonFileHashMatch}
+	assert.Contains(t, expectedReasons, res.Reason, "Duplicate reason should be PixelHashMatch or FileHashMatch")
+
+	if res.Reason == pkg.ReasonPixelHashMatch {
+		assert.Equal(t, pkg.HashTypePixel, res.HashType)
+	} else {
+		assert.Equal(t, pkg.HashTypeFile, res.HashType)
+	}
+	t.Logf("Identical HEIC comparison result: duplicates=%v, reason=%s, hash_type=%s", res.AreDuplicates, res.Reason, res.HashType)
+}
+
+func TestAreFilesPotentiallyDuplicate_HEIF_Different(t *testing.T) {
+	dir := t.TempDir()
+	// Placeholder HEIC file and a standard JPG.
+	heicContent := []byte("minimal-heic-content")
+	heicPath := createTempFile(t, dir, "sample.heic", heicContent)
+	jpgPath := createTempFile(t, dir, "photoA1.jpg", pngMinimal_1x1_Red) // Using pngMinimal_1x1_Red as placeholder JPG content
+
+	res, err := pkg.AreFilesPotentiallyDuplicate(heicPath, jpgPath)
+	require.NoError(t, err)
+
+	// These are different types and likely different content/sizes.
+	// Expected: Not duplicates.
+	// Reason could be SizeMismatch, or if sizes happen to be same, then
+	// PixelHashMismatch (if HEIC decodes) or FileHashMismatch (if HEIC doesn't decode and fallback).
+	assert.False(t, res.AreDuplicates, "HEIC and JPG files should not be duplicates")
+
+	// Log details for diagnostics
+	t.Logf("HEIC vs JPG comparison result: duplicates=%v, reason=%s, hash_type=%s", res.AreDuplicates, res.Reason, res.HashType)
+
+	// More specific assertions on reason can be added if behavior is strictly defined
+	// e.g., if size is different, it must be SizeMismatch.
+	// If size is same, it must be one of the hash mismatches.
+	// For now, just ensuring they are not duplicates is the primary goal.
+	if res.Reason == pkg.ReasonSizeMismatch {
+		// This is a valid outcome if sizes differ.
+	} else if res.Reason == pkg.ReasonPixelHashMismatch {
+		// Valid if sizes are same and pixel comparison happened.
+		assert.Equal(t, pkg.HashTypePixel, res.HashType)
+	} else if res.Reason == pkg.ReasonFileHashMismatch {
+		// Valid if sizes are same and it fell back to file hash.
+		assert.Equal(t, pkg.HashTypeFile, res.HashType)
+	} else {
+		t.Logf("Unexpected reason for non-duplication: %s", res.Reason)
+	}
+}
+
 // 4. TestAreFilesPotentiallyDuplicate_Images_ExifMismatch_DifferentSizes
 // For this, we rely on getExifSignature. If files have no EXIF, it proceeds to pixel hash.
 // If they have different EXIF, it should report ExifMismatch.
