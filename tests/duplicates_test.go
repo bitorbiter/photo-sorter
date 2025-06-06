@@ -21,9 +21,9 @@ import (
 // --- Test Helper Functions ---
 
 var (
-	pngMinimal_1x1_Red []byte
+	pngMinimal_1x1_Red  []byte
 	pngMinimal_1x1_Blue []byte
-	pngMinimal_2x2_Red []byte
+	pngMinimal_2x2_Red  []byte
 	// For EXIF tests, we'd ideally use files with controlled EXIF,
 	// but for now, we'll use distinct small PNGs which might have default/no EXIF.
 	// If real EXIF testing is needed, actual files with known EXIF would be better.
@@ -97,7 +97,6 @@ func createTempFile(t *testing.T, dir string, name string, content []byte) strin
 	require.NoError(t, err)
 	return filePath
 }
-
 
 // --- Test Cases ---
 

@@ -35,31 +35,31 @@ func TestGenerateReport(t *testing.T) {
 	}
 
 	tests := []struct {
-		name                string
-		reportPath          string
-		duplicates          []pkg.DuplicateInfo
-		copiedFilesCount    int
-		processedFilesCount int
-		filesToCopyCount    int
+		name                      string
+		reportPath                string
+		duplicates                []pkg.DuplicateInfo
+		copiedFilesCount          int
+		processedFilesCount       int
+		filesToCopyCount          int
 		pixelHashUnsupportedCount int // New field, though can default to 0 for these tests
-		expectErr           bool
-		expectedSubstrings  []string // Substrings to check for in the report
+		expectErr                 bool
+		expectedSubstrings        []string // Substrings to check for in the report
 	}{
 		{
-			name:                "report with duplicates",
-			reportPath:          reportFilePathRegular,
-			duplicates:          duplicateEntries,
-			copiedFilesCount:    5,
-			processedFilesCount: 10,
-			filesToCopyCount:    7, // 5 copied + 2 from duplicates (kept versions)
+			name:                      "report with duplicates",
+			reportPath:                reportFilePathRegular,
+			duplicates:                duplicateEntries,
+			copiedFilesCount:          5,
+			processedFilesCount:       10,
+			filesToCopyCount:          7, // 5 copied + 2 from duplicates (kept versions)
 			pixelHashUnsupportedCount: 1, // Example value
-			expectErr:           false,
+			expectErr:                 false,
 			expectedSubstrings: []string{
 				"Total files scanned: 10",
-				"Files identified for copying (unique or better): 7",
+				// "Files identified for copying (unique or better): 7", // This line is removed from the report
 				"Files successfully copied: 5",
 				"Duplicate files found and discarded/skipped: 2",
-				"Files where pixel hashing was not supported (fallback to file hash): 1",
+				"Image files where pixel hashing was not supported (fallback to file hash): 1",
 				"Kept: path/to/kept1.jpg",
 				"Discarded: path/to/discarded1.jpg",
 				"Reason: Higher resolution",
@@ -69,32 +69,32 @@ func TestGenerateReport(t *testing.T) {
 			},
 		},
 		{
-			name:                "report with no duplicates",
-			reportPath:          reportFilePathNoDuplicates,
-			duplicates:          []pkg.DuplicateInfo{},
-			copiedFilesCount:    8,
-			processedFilesCount: 8,
-			filesToCopyCount:    8,
+			name:                      "report with no duplicates",
+			reportPath:                reportFilePathNoDuplicates,
+			duplicates:                []pkg.DuplicateInfo{},
+			copiedFilesCount:          8,
+			processedFilesCount:       8,
+			filesToCopyCount:          8,
 			pixelHashUnsupportedCount: 0,
-			expectErr:           false,
+			expectErr:                 false,
 			expectedSubstrings: []string{
 				"Total files scanned: 8",
-				"Files identified for copying (unique or better): 8",
+				// "Files identified for copying (unique or better): 8", // This line is removed from the report
 				"Files successfully copied: 8",
 				"Duplicate files found and discarded/skipped: 0",
-				"Files where pixel hashing was not supported (fallback to file hash): 0",
+				"Image files where pixel hashing was not supported (fallback to file hash): 0",
 			},
 		},
 		{
-			name:                "invalid report path (unwritable)",
-			reportPath:          invalidReportFilePath,
-			duplicates:          []pkg.DuplicateInfo{},
-			copiedFilesCount:    0,
-			processedFilesCount: 0,
-			filesToCopyCount:    0,
+			name:                      "invalid report path (unwritable)",
+			reportPath:                invalidReportFilePath,
+			duplicates:                []pkg.DuplicateInfo{},
+			copiedFilesCount:          0,
+			processedFilesCount:       0,
+			filesToCopyCount:          0,
 			pixelHashUnsupportedCount: 0,
-			expectErr:           true,
-			expectedSubstrings:  nil,
+			expectErr:                 true,
+			expectedSubstrings:        nil,
 		},
 	}
 

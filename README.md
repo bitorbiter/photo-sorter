@@ -12,6 +12,7 @@ Photo Sorter is a command-line tool written in Go to help you organize your phot
   4.  **Full File Content Hashing:** For non-image files, or as a final check for images if previous stages are inconclusive (e.g., EXIF missing, pixel hashes match), the entire file content is hashed using SHA-256.
 - **Resolution Preference:** When visually identical image duplicates (matched by pixel data) are found, the tool attempts to keep the version with the highest image resolution.
 - **Reporting:** Generates a `report.txt` in the target directory detailing files processed, copied, duplicates found (including which files were kept/discarded and why, reflecting the stage of detection), and lists any files for which pixel data could not be extracted for hashing.
+- **Improved User Experience:** Provides clear progress indication during processing and offers a `-verbose` mode for detailed, per-file logging. Standard output is concise by default.
 - **Cross-Platform:** Designed to run on Windows, macOS, and Linux.
 
 ## Prerequisites
@@ -84,6 +85,7 @@ Or on Windows:
 **Command-line Flags:**
 * `-sourceDir`: (Required) The directory containing the photos you want to sort. The tool will scan this directory recursively for image files (common formats like JPG, PNG, GIF, HEIF/HEVC (e.g., ".heic, .heif"), and various RAW types are supported for scanning).
 * `-targetDir`: (Required) The base directory where the sorted photos will be copied. Photos will be organized into `YYYY/MM` subfolders within this directory.
+* `-verbose`: (Optional) Enable verbose output for detailed processing information for each file. By default, the tool prints summary information and progress.
 
 ## Duplicate Handling and Report
 For each source file, its exact target path (based on date and original extension) is determined. The tool first checks if a file already exists at this specific target path.
@@ -114,7 +116,7 @@ This layered strategy ensures that computationally expensive hashing is only per
 
 **Reporting:**
 A detailed report named `report.txt` is generated in the root of the target directory. This report lists:
-    - A summary of total files scanned, files identified for copying, files successfully copied, and duplicate files found.
+    - A summary of total files scanned, files successfully copied, and duplicate files found.
     - Specific details for each duplicate pair, indicating which file path was kept, which was discarded, and the reason for the decision (e.g., "size_mismatch", "exif_mismatch", "pixel_hash_match (higher resolution kept)", "file_hash_match").
     - An approximate count of files for which pixel-data hashing was not supported and therefore used full file content hashing (if applicable).
 

@@ -43,10 +43,7 @@ func GenerateReport(reportPath string, duplicates []DuplicateInfo, copiedFilesCo
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(file, "  - Files identified for copying (unique or better): %d\n", filesToCopyCount)
-	if err != nil {
-		return err
-	}
+	// Files identified for copying is removed as it's redundant with Files successfully copied.
 	_, err = fmt.Fprintf(file, "  - Files successfully copied: %d\n", copiedFilesCount)
 	if err != nil {
 		return err
@@ -55,7 +52,7 @@ func GenerateReport(reportPath string, duplicates []DuplicateInfo, copiedFilesCo
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(file, "  - Files where pixel hashing was not supported (fallback to file hash): %d\n", pixelHashUnsupportedCount)
+	_, err = fmt.Fprintf(file, "  - Image files where pixel hashing was not supported (fallback to file hash): %d\n", pixelHashUnsupportedCount)
 	if err != nil {
 		return err
 	}
