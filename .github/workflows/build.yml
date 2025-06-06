@@ -21,6 +21,7 @@ jobs:
         go-version: '1.22'
 
     - name: Check go formatting
+      shell: bash # Explicitly use bash
       run: |
         test -z "$(gofmt -l .)" || (echo "Go files are not formatted. Please run 'go fmt ./...'"; exit 1)
 
