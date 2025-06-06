@@ -83,9 +83,12 @@ Or on Windows:
 * `-targetDir`: (Required) The base directory where the sorted photos will be copied. Photos will be organized into `YYYY/MM` subfolders within this directory.
 
 ## Duplicate Handling and Report
-The core logic of Photo Sorter involves first thoroughly comparing all processable files from the source directory to identify duplicates. Only files determined to be unique, or the preferred version in a set of duplicates (e.g., highest resolution), are then selected for the actual copy operation. This ensures that the target directory is populated efficiently without redundant files.
+For each source file, its exact target path (based on date and original extension) is determined. The tool first checks if a file already exists at this specific target path.
+- If the target path is empty, the source file is copied directly to this path.
+- If a file *already exists* at the target path, the source file is then compared *only* against this single, existing target file using the multi-stage process detailed below (EXIF, Pixel Hash, File Hash).
+This optimized approach avoids unnecessary comparisons against a list of other source files, improving efficiency.
 
-The comparison process prioritizes checking source files against files already present in the target directory structure. If no target duplicate is found, the source file is then compared against other source files already selected for copying in the current session. A multi-stage approach is used:
+The multi-stage comparison process is as follows:
 
 **For Image-vs-Image Comparisons:**
 If both files are identified as image types (e.g., based on extension like .jpg, .png, .gif):
@@ -103,9 +106,8 @@ If one or both files are not identified as image types:
 This layered strategy ensures that computationally expensive hashing is only performed when necessary.
 
 **Duplicate Resolution:**
--   If two images are identified as duplicates based on their **pixel-data hash** (meaning their raw pixel data is identical), the tool attempts to keep the version with the highest image resolution (calculated as width * height from image dimensions). This is most relevant if two files have identical pixel streams but, for example, different EXIF metadata reporting different dimensions.
--   For any duplicates identified by **full file hash** (either for non-images, or as a fallback for images), or if image resolution cannot be determined for pixel-data duplicates, the first version of the file encountered and selected for copying is typically kept.
--   If a source file is found to be a higher-resolution pixel-data duplicate of a file already in the target directory, the source file is copied (typically with a versioned name if the base name is the same), and the report will indicate that the existing target file is superseded.
+-   If two images are identified as duplicates based on their **pixel-data hash** (meaning their raw pixel data and dimensions are identical), the tool aims to keep the best quality version. If `main.go` determines the source is better (e.g., due to more complete metadata or if one file's resolution metadata was previously misread, though typically pixel-identical files will have identical resolutions), the source might replace the target.
+-   For other duplicate types (like **file hash match** where content is identical but they aren't images, or for images where pixel hashing isn't conclusive due to errors or unsupported formats), the existing target file is preserved if it's identical to the source. If the source file is different but maps to the same target name (e.g. different content but same date/time), the existing target file is also preserved and the source file is typically discarded to prevent accidental data loss, as versioning of different files at the same exact path is not currently implemented.
 
 **Reporting:**
 A detailed report named `report.txt` is generated in the root of the target directory. This report lists:
