@@ -592,3 +592,69 @@ func TestRunApplicationLogic_SequentialSourceToSameTarget(t *testing.T) {
 func TestRunApplicationLogic_ComplexScenario(t *testing.T) {
 	t.Skip("Complex scenario test not yet implemented.")
 }
+
+func TestRunApplicationLogic_HEICSupport(t *testing.T) {
+	sourceDir, targetDir := setupTestDirs(t)
+
+	// Create a placeholder HEIC file in the source directory.
+	// EXIF extraction will fail, so it should use file modification time.
+	// heif-go is registered, so GetImageResolution might succeed or fail gracefully.
+	// AreFilesPotentiallyDuplicate will likely use file hash if pixel hash is unsupported for empty HEIC.
+	heicModTime := time.Date(2024, 7, 15, 14, 30, 0, 0, time.UTC)
+	heicContent := []byte("simulated heic content") // Not a real HEIC, just for testing file ops
+
+	sourceFiles := []fileSpec{
+		// Use one of the placeholder files created in step 1 of the overall task.
+		// For the test, we create it here with specific mod time and content.
+		{Path: "sampleA.heic", Content: heicContent, ModTime: heicModTime},
+	}
+	createTestFiles(t, sourceDir, sourceFiles)
+
+	processed, copied, filesToCopy, duplicates, pixelHashUnsupported, err := runApplicationLogic(sourceDir, targetDir)
+	require.NoError(t, err, "runApplicationLogic should not error for HEIC file")
+
+	assert.Equal(t, 1, processed, "Should have processed 1 HEIC file")
+	assert.Equal(t, 1, copied, "Should have copied 1 HEIC file")
+	assert.Equal(t, 1, filesToCopy, "Files to copy should be 1") // filesToCopy == copied
+	assert.Len(t, duplicates, 0, "Should be no duplicates for a single HEIC file to empty target")
+
+	// Behavior of pixelHashUnsupported depends on heif-go's ability to decode the placeholder.
+	// If heif-go decodes it (even if to a default image), unsupported might be 0.
+	// If heif-go fails and it falls back to file hash, unsupported might be 1.
+	// We'll be flexible here or assert based on expected heif-go behavior with minimal files.
+	// Given it's "simulated heic content", heif-go will likely fail to decode it.
+	// And pkg.IsImageExtension("sampleA.heic") is true.
+	// So, pixel hash will be attempted, fail, and it will be marked as unsupported
+	// IF AND ONLY IF it goes through the duplicate check path.
+	// Since it's a direct copy to an empty target, it will NOT go through duplicate check.
+	// Thus, pixelHashUnsupported will be 0 based on current main.go logic.
+	assert.Equal(t, 0, pixelHashUnsupported, "Pixel hash should be 0 for a directly copied file, as it doesn't go through duplicate check logic where this is counted.")
+
+	// Verify the file was copied to the correct location based on ModTime
+	expectedTargetFilename := heicModTime.Format(testDateFormat) + ".heic"
+	expectedTargetPath := filepath.Join(targetDir, heicModTime.Format("2006"), heicModTime.Format("01"), expectedTargetFilename)
+
+	_, statErr := os.Stat(expectedTargetPath)
+	assert.NoError(t, statErr, "Expected target HEIC file %s to exist", expectedTargetPath)
+
+	// Verify content if needed (though it's just a placeholder)
+	copiedContent, readErr := os.ReadFile(expectedTargetPath)
+	require.NoError(t, readErr)
+	assert.Equal(t, heicContent, copiedContent, "Content of copied HEIC file should match source")
+
+	// Verify report (minimal check, more detailed checks could be added)
+	reportFilePath := filepath.Join(targetDir, "report.txt")
+	_, reportStatErr := os.Stat(reportFilePath)
+	assert.NoError(t, reportStatErr, "Report file should exist")
+
+	reportContent, readReportErr := os.ReadFile(reportFilePath)
+	require.NoError(t, readReportErr)
+	reportStr := string(reportContent)
+
+	// Adjust expected report strings to match the actual format from pkg/reporter.go
+	assert.Contains(t, reportStr, "Total files scanned: 1", "Report: Files Processed count incorrect")
+	assert.Contains(t, reportStr, "Files successfully copied: 1", "Report: Files Copied count incorrect")
+	assert.Contains(t, reportStr, "Duplicate files found and discarded/skipped: 0", "Report: Duplicates Found count incorrect")
+	// Based on the corrected understanding, pixelHashUnsupported should be 0 for this test case.
+	assert.Contains(t, reportStr, "Files where pixel hashing was not supported (fallback to file hash): 0", "Report: Pixel Hash Unsupported count incorrect")
+}

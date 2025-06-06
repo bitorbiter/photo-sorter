@@ -26,6 +26,9 @@ This project relies on the following Go modules:
   - Purpose: Used to extract EXIF data from image files.
   - License: BSD 2-Clause "Simplified" License
   - Copyright: Copyright (c) 2012, Robert Carlsen & Contributors
+- **heif-go**: `github.com/vegidio/heif-go`
+  - Purpose: HEIF/HEIC image decoding. Provides support for `.heic` and `.heif` files.
+  - License: MIT License
 
 ### Indirect Dependencies
 These libraries are included by the direct dependencies or by the testing framework. While not directly imported by the application's core logic, they are part of the overall project build and test environment.
@@ -79,7 +82,7 @@ Or on Windows:
 ```
 
 **Command-line Flags:**
-* `-sourceDir`: (Required) The directory containing the photos you want to sort. The tool will scan this directory recursively for image files (common formats like JPG, PNG, GIF, and various RAW types are supported for scanning).
+* `-sourceDir`: (Required) The directory containing the photos you want to sort. The tool will scan this directory recursively for image files (common formats like JPG, PNG, GIF, HEIF/HEVC (e.g., ".heic, .heif"), and various RAW types are supported for scanning).
 * `-targetDir`: (Required) The base directory where the sorted photos will be copied. Photos will be organized into `YYYY/MM` subfolders within this directory.
 
 ## Duplicate Handling and Report
@@ -91,9 +94,9 @@ This optimized approach avoids unnecessary comparisons against a list of other s
 The multi-stage comparison process is as follows:
 
 **For Image-vs-Image Comparisons:**
-If both files are identified as image types (e.g., based on extension like .jpg, .png, .gif):
-1.  **EXIF Data Signature:** An attempt is made to generate a signature from key EXIF tags (e.g., `DateTimeOriginal`, `Make`, `Model`, `ImageWidth`, `ImageHeight`). If these signatures differ, the files are considered non-duplicates. This step helps differentiate images taken at different times or with different camera settings.
-2.  **Pixel-Data Hashing:** If EXIF signatures match, are absent in one or both files, or if this check is otherwise inconclusive, the tool calculates a SHA-256 hash of the raw pixel data for supported image formats (e.g., JPEG, PNG, GIF), deliberately ignoring all metadata.
+If both files are identified as image types (e.g., based on extension like .jpg, .png, .gif, .heic, .heif):
+1.  **EXIF Data Signature:** An attempt is made to generate a signature from key EXIF tags (e.g., `DateTimeOriginal`, `Make`, `Model`, `ImageWidth`, `ImageHeight`). If these signatures differ, the files are considered non-duplicates. This step helps differentiate images taken at different times or with different camera settings. For HEIF/HEVC (.heic, .heif) files, EXIF data extraction is currently limited, and the application will primarily rely on file modification time for date-based sorting for these formats.
+2.  **Pixel-Data Hashing:** If EXIF signatures match, are absent in one or both files, or if this check is otherwise inconclusive, the tool calculates a SHA-256 hash of the raw pixel data for supported image formats (e.g., JPEG, PNG, GIF, HEIC, HEIF), deliberately ignoring all metadata.
     *   If these pixel-data hashes match, the images are considered duplicates at this stage (i.e., their image sensor data is identical).
     *   **Important Note on Pixel-Data Hashing:** This method identifies images with *bit-for-bit identical pixel data*. It is very effective for finding exact duplicates where only metadata might have changed. However, it will **not** identify images as duplicates if they have been resized, re-encoded (e.g., saving a PNG as a JPG), or undergone even minor visual edits, as these operations alter the raw pixel data.
 3.  **Full File Content Hashing (Fallback for Images):** If pixel-data hashing is unsupported for one or both image types, or if an error occurs that prevents pixel hashing (and it's not due to one file being unsupported after the other was successfully hashed or also unsupported), the tool falls back to calculating a SHA-256 hash of the entire file content. If these full file hashes match, they are considered duplicates.

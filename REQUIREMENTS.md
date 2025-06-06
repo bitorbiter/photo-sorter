@@ -5,9 +5,13 @@ This document lists the implemented features and requirements for the Photo Sort
 ## Core Functionality
 
 -   **REQ-CF-DS-01:** **Date-Based Sorting:**
+    -   **REQ-CF-DS-01.A:** Supports processing of common image types including JPEG, PNG, GIF, and HEIF/HEIC (.heic, .heif) files, along with various RAW formats recognized by the underlying libraries.
     -   **REQ-CF-DS-02:** Organizes photos into a directory structure of `YYYY/MM`.
-    -   **REQ-CF-DS-03:** Uses the photo's EXIF creation date if available.
+    -   **REQ-CF-DS-03:** Uses the photo's EXIF creation date if available. Note: For HEIF/HEIC files, EXIF data extraction may not be available with current libraries, and the system will proceed to `REQ-CF-DS-04`.
     -   **REQ-CF-DS-04:** Falls back to the file's last modification time if EXIF date is not found or is invalid.
+
+-   **REQ-CF-SFF-01:** **Specific File Format Support:**
+    -   **REQ-CF-SFF-01.A:** The application shall support processing of HEIF/HEIC image files with `.heic` and `.heif` extensions.
 
 -   **REQ-CF-FR-01:** **File Renaming:**
     -   **REQ-CF-FR-02:** Photos copied to the target directory are renamed.
@@ -67,3 +71,6 @@ This document lists the implemented features and requirements for the Photo Sort
 - **REQ-DP-04:** `go-spew` library (github.com/davecgh/go-spew) for pretty-printing data structures (indirect dependency, often used in testing).
 - **REQ-DP-05:** `go-difflib` library (github.com/pmezard/go-difflib) for data comparison utilities (indirect dependency, often used in testing).
 - **REQ-DP-06:** `yaml.v3` library (gopkg.in/yaml.v3) for YAML support (indirect dependency).
+- **REQ-DP-07:** `github.com/vegidio/heif-go` library for HEIF/HEIC image decoding.
+    - Purpose: Enables the application to decode and process `.heic` and `.heif` image files.
+    - License: MIT License

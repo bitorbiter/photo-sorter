@@ -30,6 +30,28 @@ func createScanTestDir(t *testing.T, baseDir string, structure map[string][]byte
 	}
 }
 
+func TestIsImageExtension_HEIF(t *testing.T) {
+	tests := []struct {
+		name     string
+		filePath string
+		expected bool
+	}{
+		{"heic extension", "photo.heic", true},
+		{"HEIC extension (uppercase)", "photo.HEIC", true},
+		{"heif extension", "photo.heif", true},
+		{"HEIF extension (uppercase)", "photo.HEIF", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := pkg.IsImageExtension(tt.filePath)
+			if actual != tt.expected {
+				t.Errorf("IsImageExtension(%q) got %v, want %v", tt.filePath, actual, tt.expected)
+			}
+		})
+	}
+}
+
 func TestIsImageExtension(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -404,6 +426,49 @@ func TestCreateTargetDirectory(t *testing.T) {
 // Sample JPEG with DateTimeOriginal: 2008:05:30 15:56:01
 // You can create such a file using an EXIF editor or find one online.
 // For now, we'll mostly test error paths and non-EXIF scenarios.
+
+func TestGetPhotoCreationDate_HEIF_Fallback(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a dummy HEIC file (empty, as goexif won't parse it anyway)
+	heicFile := filepath.Join(tmpDir, "sample.heic")
+	if f, err := os.Create(heicFile); err != nil {
+		t.Fatalf("Failed to create dummy HEIC file: %v", err)
+	} else {
+		f.Close()
+	}
+
+	// Since heif-go is registered, the behavior might change if it attempts to decode
+	// before goexif. However, GetPhotoCreationDate specifically uses goexif.
+	// We expect goexif to fail decoding a HEIC file.
+	_, err := pkg.GetPhotoCreationDate(heicFile)
+
+	if err == nil {
+		t.Errorf("Expected an error when calling GetPhotoCreationDate with HEIC file, got nil")
+	} else {
+		// Check if the error is one of the expected types:
+		// - pkg.ErrNoExifDate (if goexif initializes but finds no date)
+		// - or a more general "failed to decode EXIF data"
+		// The exact error depends on how goexif handles unknown formats.
+		// It's likely to be a decoding error rather than ErrNoExifDate.
+		expectedErrorSubstrings := []string{
+			"failed to decode EXIF data", // Generic decode error from goexif
+			pkg.ErrNoExifDate.Error(),    // Specific error if goexif somehow "starts" then fails
+		}
+		foundExpectedError := false
+		for _, sub := range expectedErrorSubstrings {
+			if strings.Contains(err.Error(), sub) {
+				foundExpectedError = true
+				break
+			}
+		}
+		if !foundExpectedError {
+			t.Errorf("GetPhotoCreationDate(%q) returned error '%v', which does not contain any of the expected substrings: %v", heicFile, err, expectedErrorSubstrings)
+		} else {
+			t.Logf("GetPhotoCreationDate(%q) correctly returned error '%v', indicating fallback to mod time would occur.", heicFile, err)
+		}
+	}
+}
 
 func TestGetPhotoCreationDate(t *testing.T) {
 	tmpDir := t.TempDir()
