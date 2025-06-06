@@ -222,42 +222,40 @@ func TestFindPotentialTargetConflicts(t *testing.T) {
 				currentExpectedConflicts = newExpectedConflicts
 			}
 
-			// Normalize expected paths and sort for comparison
-			expectedFullPaths := make([]string, len(currentExpectedConflicts))
-			for i, fName := range currentExpectedConflicts {
-				expectedFullPaths[i] = filepath.Join(tt.targetMonthDir, fName)
+			// Normalize Expected Paths:
+			// `currentExpectedConflicts` already holds relative paths, potentially adjusted for Windows.
+			// We need full paths for comparison if `FindPotentialTargetConflicts` returns full paths.
+			// Assuming `FindPotentialTargetConflicts` returns full paths as per previous logic.
+			uniqueLowerWantMap := make(map[string]bool)
+			lowerWantPaths := []string{}
+			for _, fName := range currentExpectedConflicts { // fName is relative path from tc.expectedConflicts
+				fullPWant := filepath.Join(tt.targetMonthDir, fName)
+				lowerP := strings.ToLower(fullPWant)
+				if _, exists := uniqueLowerWantMap[lowerP]; !exists {
+					uniqueLowerWantMap[lowerP] = true
+					lowerWantPaths = append(lowerWantPaths, lowerP)
+				}
 			}
-			sort.Strings(expectedFullPaths)
-			sort.Strings(results)
+			sort.Strings(lowerWantPaths)
 
-			// Regardless of OS, perform a case-insensitive comparison for ElementsMatch robustness.
-			// The function itself might return case-sensitive paths from the FS,
-			// but for matching elements, we want to ensure all expected are found irrespective of case.
-			actualForCompare := make([]string, len(results))
-			for i, p := range results {
-				actualForCompare[i] = strings.ToLower(p)
+			// Normalize Actual Paths (Gotten Paths):
+			// `results` are the paths returned by FindPotentialTargetConflicts, assumed to be full paths.
+			uniqueLowerGotMap := make(map[string]bool)
+			lowerGotPaths := []string{}
+			for _, pGot := range results {
+				lowerP := strings.ToLower(pGot)
+				if _, exists := uniqueLowerGotMap[lowerP]; !exists { // Should always be new if function returns unique paths
+					uniqueLowerGotMap[lowerP] = true
+					lowerGotPaths = append(lowerGotPaths, lowerP)
+				}
 			}
-			sort.Strings(actualForCompare)
+			sort.Strings(lowerGotPaths)
 
-			expectedForCompare := make([]string, len(expectedFullPaths))
-			for i, p := range expectedFullPaths {
-				expectedForCompare[i] = strings.ToLower(p)
+			// Assertion:
+			if !reflect.DeepEqual(lowerGotPaths, lowerWantPaths) {
+				t.Errorf("Test Case: %s\nFindPotentialTargetConflicts() case-insensitive comparison failed:\n  got (unique, lower, sorted): %v\n want (unique, lower, sorted): %v\n original got (unsorted): %v\n original tc.expectedConflicts (unsorted, relative): %v",
+					tt.name, lowerGotPaths, lowerWantPaths, results, tt.expectedConflicts)
 			}
-			sort.Strings(expectedForCompare)
-
-			if len(expectedForCompare) == 0 && len(actualForCompare) == 0 {
-				// Both are empty, which is fine.
-			} else if !reflect.DeepEqual(actualForCompare, expectedForCompare) {
-				// This error message will show the lowercased versions, making it clear what was compared.
-				// It also includes the original case versions for additional context.
-				t.Errorf("FindPotentialTargetConflicts() case-insensitive comparison failed:\n  got (lower): %v\n want (lower): %v\n original got (sorted): %v\n original want (sorted): %v",
-					actualForCompare, expectedForCompare, results, expectedFullPaths)
-			}
-
-			// Additionally, if on Windows, where os.ReadDir might only return one casing for "file.JPG" and "file.jpg",
-			// the `currentExpectedConflicts` list has already been adjusted to account for this.
-			// The case-insensitive comparison above should handle this correctly.
-			// The original block for `if isWindows` can be removed as the general case-insensitive check is now primary.
 		})
 	}
 }
