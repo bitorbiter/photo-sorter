@@ -7,7 +7,6 @@ import (
 	// "errors" // No longer directly used in main after refactor
 	"os"
 	"path/filepath"
-	"strings" // Added for checking file extensions
 	"time"    // time.Time is used for photoDate variable type and other time operations
 
 	_ "image/gif"  // Register GIF decoder
