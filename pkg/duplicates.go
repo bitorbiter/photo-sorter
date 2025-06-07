@@ -14,8 +14,127 @@ import (
 	"strings"
 
 	"github.com/rwcarlsen/goexif/exif"
-	"github.com/rwcarlsen/goexif/mknote"
+	mknote "github.com/rwcarlsen/goexif/mknote"
 )
+
+// compareByExif attempts to compare two files using their EXIF signatures.
+// match: true if EXIF signatures are present and identical.
+// conclusive: true if this comparison is enough to determine the outcome (e.g., EXIF mismatch).
+// err: any error encountered during EXIF processing (not ErrNoExif).
+// sig1, sig2: the EXIF signatures if obtained.
+func compareByExif(filePath1, filePath2 string) (match bool, conclusive bool, err error, sig1 string, sig2 string) {
+	exifSig1, errExif1 := getExifSignature(filePath1)
+	exifSig2, errExif2 := getExifSignature(filePath2)
+
+	// Case 1: Both files have EXIF data.
+	if errExif1 == nil && errExif2 == nil {
+		sig1 = exifSig1
+		sig2 = exifSig2
+		if exifSig1 == exifSig2 {
+			return true, false, nil, sig1, sig2 // Match, but inconclusive (need further checks)
+		}
+		// EXIF signatures differ.
+		return false, true, nil, sig1, sig2 // No match, conclusive
+	}
+
+	// Case 2: Errors encountered that are not ErrNoExif.
+	if (errExif1 != nil && errExif1 != ErrNoExif) || (errExif2 != nil && errExif2 != ErrNoExif) {
+		// Construct a combined error message if both failed with actual errors.
+		if (errExif1 != nil && errExif1 != ErrNoExif) && (errExif2 != nil && errExif2 != ErrNoExif) {
+			return false, false, fmt.Errorf("EXIF read error for %s (%v) and %s (%v)", filePath1, errExif1, filePath2, errExif2), "", ""
+		} else if errExif1 != nil && errExif1 != ErrNoExif {
+			return false, false, fmt.Errorf("EXIF read error for %s: %w", filePath1, errExif1), "", ""
+		}
+		return false, false, fmt.Errorf("EXIF read error for %s: %w", filePath2, errExif2), "", ""
+	}
+
+	// Case 3: One or both files have no EXIF data (ErrNoExif).
+	// This scenario is considered inconclusive for matching based on EXIF alone.
+	// We still return any valid signatures obtained.
+	if errExif1 == nil {
+		sig1 = exifSig1
+	}
+	if errExif2 == nil {
+		sig2 = exifSig2
+	}
+	// If one has EXIF and the other doesn't, or if both don't, it's not a match, and not conclusive.
+	return false, false, nil, sig1, sig2
+}
+
+// compareByPixelHash attempts to compare two image files using their pixel data hashes.
+// match: true if pixel hashes were successfully computed for both and they are identical.
+// conclusive: true if this comparison is enough to determine the outcome (e.g., pixel hashes match or mismatch).
+//             False if pixel hashing was not supported for one or both files.
+// attempted: true if pixel hashing was attempted.
+// err: any critical error encountered during pixel hashing (not ErrUnsupportedForPixelHashing).
+// hash1, hash2: the pixel hashes if obtained.
+func compareByPixelHash(filePath1, filePath2 string) (match bool, conclusive bool, attempted bool, err error, hash1 string, hash2 string) {
+	attempted = true // Mark that we are attempting pixel hash comparison.
+
+	pxHash1, errPx1 := CalculatePixelDataHash(filePath1)
+	if errPx1 != nil {
+		if strings.Contains(errPx1.Error(), ErrUnsupportedForPixelHashing.Error()) {
+			fmt.Printf("Info: Pixel hash unsupported for %s.\n", filePath1)
+			// Store "unsupported" for hash1 to indicate attempt? For now, leave empty.
+			// Try to hash filePath2 to see if it's also unsupported.
+			pxHash2, errPx2 := CalculatePixelDataHash(filePath2)
+			if errPx2 != nil && strings.Contains(errPx2.Error(), ErrUnsupportedForPixelHashing.Error()) {
+				// Both unsupported, not conclusive for pixel hash, no match here.
+				return false, false, true, nil, "", ""
+			} else if errPx2 == nil {
+				// File1 unsupported, File2 supported. Not conclusive for pixel hash.
+				return false, false, true, nil, "", pxHash2
+			}
+			// File1 unsupported, File2 had a different error.
+			return false, false, true, errPx2, "", "" // Return error from filePath2
+		}
+		// Critical error for filePath1.
+		return false, false, true, errPx1, "", ""
+	}
+	hash1 = pxHash1 // Store successful hash for filePath1
+
+	pxHash2, errPx2 := CalculatePixelDataHash(filePath2)
+	if errPx2 != nil {
+		if strings.Contains(errPx2.Error(), ErrUnsupportedForPixelHashing.Error()) {
+			fmt.Printf("Info: Pixel hash for %s succeeded, but unsupported for %s.\n", filePath1, filePath2)
+			// FilePath1 hashed, FilePath2 unsupported. Not conclusive by pixel hash.
+			return false, false, true, nil, hash1, "" // hash2 can be empty or "unsupported"
+		}
+		// Critical error for filePath2 after filePath1 succeeded.
+		return false, false, true, errPx2, hash1, ""
+	}
+	hash2 = pxHash2 // Store successful hash for filePath2
+
+	// Both pixel hashes calculated successfully.
+	if hash1 == hash2 {
+		return true, true, true, nil, hash1, hash2 // Match, conclusive.
+	}
+	// Pixel hashes differ.
+	return false, true, true, nil, hash1, hash2 // No match, conclusive.
+}
+
+// compareByFileHash compares two files using their full file content hashes.
+// match: true if file hashes were successfully computed for both and they are identical.
+// err: any critical error encountered during file hashing.
+// hash1, hash2: the file hashes if obtained.
+func compareByFileHash(filePath1, filePath2 string) (match bool, err error, hash1 string, hash2 string) {
+	fHash1, errFf1 := CalculateFileHash(filePath1)
+	if errFf1 != nil {
+		return false, fmt.Errorf("error full file hashing for %s: %w", filePath1, errFf1), "", ""
+	}
+	hash1 = fHash1
+
+	fHash2, errFf2 := CalculateFileHash(filePath2)
+	if errFf2 != nil {
+		return false, fmt.Errorf("error full file hashing for %s: %w", filePath2, errFf2), hash1, ""
+	}
+	hash2 = fHash2
+
+	if hash1 == hash2 {
+		return true, nil, hash1, hash2 // Match
+	}
+	return false, nil, hash1, hash2 // No match
+}
 
 const (
 	ReasonSizeMismatch          = "size_mismatch"
@@ -231,66 +350,72 @@ func AreFilesPotentiallyDuplicate(filePath1, filePath2 string) (ComparisonResult
 
 	if isImg1 && isImg2 {
 		// 3.a EXIF Signature Check (for images)
-		result.HashType = HashTypeExif // Tentative type
-		exifSig1, errExif1 := getExifSignature(filePath1)
-		exifSig2, errExif2 := getExifSignature(filePath2)
+		exifMatch, exifConclusive, exifErr, exifSig1, exifSig2 := compareByExif(filePath1, filePath2)
+		result.Hash1 = exifSig1 // Store whatever EXIF sigs were found
+		result.Hash2 = exifSig2
+		result.HashType = HashTypeExif // Default to EXIF hash type if this stage is entered
 
-		if errExif1 == nil && errExif2 == nil { // Both have EXIF
-			result.Hash1 = exifSig1
-			result.Hash2 = exifSig2
-			if exifSig1 != exifSig2 {
+		if exifErr != nil {
+			// An actual error occurred during EXIF processing.
+			// Log it and treat EXIF comparison as inconclusive, then proceed to pixel hash.
+			// Alternatively, could return the error: result.Reason = ReasonError; return result, exifErr;
+			fmt.Printf("Warning: EXIF comparison error for %s, %s: %v. Proceeding to pixel hash.\n", filePath1, filePath2, exifErr)
+			result.Reason = ReasonNotCompared // EXIF check was inconclusive due to error
+		} else if exifConclusive {
+			if !exifMatch { // EXIF mismatch, conclusive
 				result.Reason = ReasonExifMismatch
 				// AreDuplicates remains false
 				return result, nil
 			}
-			// EXIF signatures match, proceed to pixel hash. ReasonNotCompared will be updated by pixel/file hash.
-			result.Reason = ReasonNotCompared
-		} else if (errExif1 != nil && errExif1 != ErrNoExif) || (errExif2 != nil && errExif2 != ErrNoExif) {
-			// An actual error occurred reading EXIF for at least one file (not just missing EXIF)
-			// Log this error? For now, treat as inconclusive for EXIF and move to pixel hash.
-			// Or, could return an error here if strict EXIF handling is required.
-			// For robustness, perhaps log and continue to pixel hash.
-			fmt.Printf("Warning: EXIF read error (f1: %v, f2: %v) for %s, %s. Proceeding to pixel hash.\n", errExif1, errExif2, filePath1, filePath2)
-			result.Reason = ReasonNotCompared // EXIF check was inconclusive due to error
+			// This case (exifConclusive and exifMatch) shouldn't happen based on compareByExif logic
+			// as a match is currently considered inconclusive. If it did, it means EXIF matched and is conclusive.
+			// For now, assume it implies proceeding.
 		}
-		// If one or both have ErrNoExif, EXIF check is inconclusive. Proceed.
+		// If EXIF matched (exifMatch is true, exifConclusive is false),
+		// or if EXIF was inconclusive (e.g., one or both missing EXIF, exifMatch is false, exifConclusive is false),
+		// we proceed to pixel hash.
+		// result.Reason will be updated by pixel/file hash if EXIF was not a mismatch.
+		// If EXIF matched, Hash1, Hash2, and HashType are already set.
 
 		// 3.b Pixel Data Hash Comparison (for images)
-		pixelHashingAttemptedOrUnsupported = true // Mark that we are going down this path.
-		pixelHash1, errPx1 := CalculatePixelDataHash(filePath1)
-		if errPx1 == nil { // Successfully pixel-hashed filePath1
-			pixelHash2, errPx2 := CalculatePixelDataHash(filePath2)
-			if errPx2 == nil { // Successfully pixel-hashed filePath2 as well
-				result.HashType = HashTypePixel
-				result.Hash1 = pixelHash1
-				result.Hash2 = pixelHash2
-				if pixelHash1 == pixelHash2 {
-					result.AreDuplicates = true
-					result.Reason = ReasonPixelHashMatch
-				} else {
-					result.Reason = ReasonPixelHashMismatch
-				}
-				return result, nil // Pixel hash conclusive (match or mismatch)
-			} else if strings.Contains(errPx2.Error(), ErrUnsupportedForPixelHashing.Error()) {
-				// filePath1 pixel hashed, but filePath2 is unsupported. Fallback to full file hash for both.
-				fmt.Printf("Info: Pixel hash for %s succeeded, but unsupported for %s. Falling back to file hash.\n", filePath1, filePath2)
-				result.HashType = HashTypeFile              // Fallback path
-				result.Reason = ReasonPixelHashNotAttempted // Reset reason before full hash
-			} else { // filePath1 pixel hashed, but filePath2 had another error.
-				result.Reason = ReasonError
-				return result, fmt.Errorf("error pixel hashing %s after %s succeeded: %w", filePath2, filePath1, errPx2)
-			}
-		} else if strings.Contains(errPx1.Error(), ErrUnsupportedForPixelHashing.Error()) {
-			// Pixel hashing filePath1 was unsupported. Fallback to full file hash for both.
-			fmt.Printf("Info: Pixel hash unsupported for %s. Falling back to file hash.\n", filePath1)
-			result.HashType = HashTypeFile              // Fallback path
-			result.Reason = ReasonPixelHashNotAttempted // Reset reason
-		} else { // filePath1 had a critical error during pixel hashing (not 'unsupported')
+		pxMatch, pxConclusive, pxAttempted, pxErr, pxSig1, pxSig2 := compareByPixelHash(filePath1, filePath2)
+		pixelHashingAttemptedOrUnsupported = pxAttempted // Update based on whether pixel hash was attempted
+
+		if pxErr != nil {
 			result.Reason = ReasonError
-			return result, fmt.Errorf("error pixel hashing %s: %w", filePath1, errPx1)
+			return result, fmt.Errorf("error during pixel hash comparison for %s and %s: %w", filePath1, filePath2, pxErr)
 		}
-		// If we reach here, it's because pixel hashing for at least one image was unsupported,
-		// leading to a fallback to full file content hashing (3.c).
+
+		result.Hash1 = pxSig1 // Store pixel hash attempt for file1 (even if partial or only one file hashed)
+		result.Hash2 = pxSig2 // Store pixel hash attempt for file2
+
+		if pxConclusive {
+			result.HashType = HashTypePixel
+			result.AreDuplicates = pxMatch
+			if pxMatch {
+				result.Reason = ReasonPixelHashMatch
+			} else {
+				result.Reason = ReasonPixelHashMismatch
+			}
+			return result, nil // Pixel hash comparison was conclusive
+		}
+		// If pixel hash was not conclusive (e.g., unsupported format for one/both)
+		// pixelHashingAttemptedOrUnsupported is true.
+		// Hash1 and Hash2 from compareByPixelHash might contain one valid hash if the other was unsupported.
+		// The EXIF hashes are still in result.Hash1, result.Hash2 from the EXIF stage if EXIF was present.
+		// We must ensure correct hashes are carried to file hash stage if needed.
+		// If EXIF was present and matched, result.Hash1/2 are EXIF. If pixel hash was attempted,
+		// pxSig1/2 from compareByPixelHash should be preferred if available.
+		// For now, if pxConclusive is false, we fall through to file hashing.
+		// The existing logic for pixelHashingAttemptedOrUnsupported will guide the file size check.
+		// Ensure HashType reflects that we are now likely falling back or decided by non-pixel method.
+		if result.HashType == HashTypeExif { // If EXIF was the last thing stored, and pixel hash wasn't conclusive
+			// We might want to clear Hash1/Hash2 if they are EXIF, as file hash is next.
+			// Or, let file hash overwrite them. Current logic overwrites.
+		}
+		result.Reason = ReasonPixelHashNotAttempted // Or more specific if one was unsupported
+		// Ensure HashType is set to File if we are falling through.
+		// This will be set later before full file hash.
 	}
 
 	// 4. Fallback/Default Comparison (Full File Hash)
@@ -316,27 +441,22 @@ func AreFilesPotentiallyDuplicate(filePath1, filePath2 string) (ComparisonResult
 	// 3.c / 4.b Full File Content Hashing
 	// Reason would be ReasonNotCompared (if EXIF was inconclusive) or ReasonPixelHashNotAttempted (if pixel hash path led here)
 	// or if it's the non-image path and sizes matched.
-	result.HashType = HashTypeFile // Explicitly set for this stage
 
-	fullHash1, errFf1 := CalculateFileHash(filePath1)
-	if errFf1 != nil {
+	fileMatch, fileErr, fSig1, fSig2 := compareByFileHash(filePath1, filePath2)
+	result.Hash1 = fSig1
+	result.Hash2 = fSig2
+	result.HashType = HashTypeFile // Set hash type for this stage
+
+	if fileErr != nil {
 		result.Reason = ReasonError
-		return result, fmt.Errorf("error full file hashing for %s: %w", filePath1, errFf1)
+		return result, fileErr // Propagate error from file hashing
 	}
-	result.Hash1 = fullHash1
 
-	fullHash2, errFf2 := CalculateFileHash(filePath2)
-	if errFf2 != nil {
-		result.Reason = ReasonError
-		return result, fmt.Errorf("error full file hashing for %s: %w", filePath2, errFf2)
-	}
-	result.Hash2 = fullHash2
-
-	if fullHash1 == fullHash2 {
+	if fileMatch {
 		result.AreDuplicates = true
 		result.Reason = ReasonFileHashMatch
 	} else {
-		// AreDuplicates is already false
+		result.AreDuplicates = false // Explicitly set, though default
 		result.Reason = ReasonFileHashMismatch
 	}
 	return result, nil
