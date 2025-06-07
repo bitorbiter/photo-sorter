@@ -7,7 +7,6 @@ import (
 	"image/png"
 	"io/ioutil"
 	"log"
-	"os"
 	"path/filepath"
 	// "strings" // No longer directly used in this file after test adjustments
 	"testing"
@@ -21,17 +20,17 @@ import (
 // --- Test Helper Functions ---
 
 var (
-	pngMinimal_1x1_Red  []byte
-	pngMinimal_1x1_Blue []byte
-	pngMinimal_2x2_Red  []byte
+	duplicates_pngMinimal_1x1_Red  []byte
+	duplicates_pngMinimal_1x1_Blue []byte
+	duplicates_pngMinimal_2x2_Red  []byte
 	// For EXIF tests, we'd ideally use files with controlled EXIF,
 	// but for now, we'll use distinct small PNGs which might have default/no EXIF.
 	// If real EXIF testing is needed, actual files with known EXIF would be better.
-	pngForExif1 []byte
-	pngForExif2 []byte
+	duplicates_pngForExif1 []byte
+	duplicates_pngForExif2 []byte
 )
 
-func fillImageForTest(img *image.RGBA, c color.Color) {
+func duplicates_fillImageForTest(img *image.RGBA, c color.Color) {
 	bounds := img.Bounds()
 	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
 		for x := bounds.Min.X; x < bounds.Max.X; x++ {
@@ -40,7 +39,7 @@ func fillImageForTest(img *image.RGBA, c color.Color) {
 	}
 }
 
-func encodePNGForTest(img image.Image) ([]byte, error) {
+func duplicates_encodePNGForTest(img image.Image) ([]byte, error) {
 	var buf bytes.Buffer // Use bytes.Buffer
 	err := png.Encode(&buf, img)
 	if err != nil {
@@ -49,45 +48,33 @@ func encodePNGForTest(img image.Image) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func initializeTestPNGs() {
+func duplicates_initializeTestPNGs() {
 	var err error
 	imgRed1x1 := image.NewRGBA(image.Rect(0, 0, 1, 1))
-	fillImageForTest(imgRed1x1, color.RGBA{R: 255, A: 255})
-	pngMinimal_1x1_Red, err = encodePNGForTest(imgRed1x1)
+	duplicates_fillImageForTest(imgRed1x1, color.RGBA{R: 255, A: 255})
+	duplicates_pngMinimal_1x1_Red, err = duplicates_encodePNGForTest(imgRed1x1)
 	if err != nil {
 		log.Fatalf("Failed to create 1x1 Red PNG: %v", err)
 	}
 
 	imgBlue1x1 := image.NewRGBA(image.Rect(0, 0, 1, 1))
-	fillImageForTest(imgBlue1x1, color.RGBA{B: 255, A: 255})
-	pngMinimal_1x1_Blue, err = encodePNGForTest(imgBlue1x1)
+	duplicates_fillImageForTest(imgBlue1x1, color.RGBA{B: 255, A: 255})
+	duplicates_pngMinimal_1x1_Blue, err = duplicates_encodePNGForTest(imgBlue1x1)
 	if err != nil {
 		log.Fatalf("Failed to create 1x1 Blue PNG: %v", err)
 	}
 
 	imgRed2x2 := image.NewRGBA(image.Rect(0, 0, 2, 2))
-	fillImageForTest(imgRed2x2, color.RGBA{R: 255, A: 255})
-	pngMinimal_2x2_Red, err = encodePNGForTest(imgRed2x2)
+	duplicates_fillImageForTest(imgRed2x2, color.RGBA{R: 255, A: 255})
+	duplicates_pngMinimal_2x2_Red, err = duplicates_encodePNGForTest(imgRed2x2)
 	if err != nil {
 		log.Fatalf("Failed to create 2x2 Red PNG: %v", err)
 	}
 
 	// For EXIF differentiation, we'll just use two different images.
 	// In a real scenario, these would be crafted to have specific EXIF.
-	pngForExif1 = pngMinimal_1x1_Red
-	pngForExif2 = pngMinimal_1x1_Blue // Different content will lead to different hash fallback if EXIF is missing
-}
-
-// TestMain for setting up test resources
-func TestMain(m *testing.M) {
-	initializeTestPNGs()
-	// Forcing imageExtensions to include .unsupported_image_ext for specific tests
-	// This is a bit of a hack for testing. In a real scenario, you might have better ways
-	// to simulate unsupported types or use a more configurable IsImageExtension.
-	// Note: This modification is global to the pkg.imageExtensions map for the duration of tests.
-	// pkg.ImageExtensions[".unsupported_image_ext"] = true // Cannot do this as it's not exported
-	// Instead, tests requiring this will use a known image ext like .png with non-image content.
-	os.Exit(m.Run())
+	duplicates_pngForExif1 = duplicates_pngMinimal_1x1_Red
+	duplicates_pngForExif2 = duplicates_pngMinimal_1x1_Blue // Different content will lead to different hash fallback if EXIF is missing
 }
 
 func createTempFile(t *testing.T, dir string, name string, content []byte) string {
@@ -105,8 +92,8 @@ func createTempFile(t *testing.T, dir string, name string, content []byte) strin
 // This test will verify they are compared by pixel hash and found to be MISMATCHED.
 func TestAreFilesPotentiallyDuplicate_Images_PixelHashMismatch_DifferentDimensions(t *testing.T) {
 	dir := t.TempDir()
-	f1Path := createTempFile(t, dir, "file1.png", pngMinimal_1x1_Red)
-	f2Path := createTempFile(t, dir, "file2.png", pngMinimal_2x2_Red) // Same color, different dimensions
+	f1Path := createTempFile(t, dir, "file1.png", duplicates_pngMinimal_1x1_Red)
+	f2Path := createTempFile(t, dir, "file2.png", duplicates_pngMinimal_2x2_Red) // Same color, different dimensions
 
 	res, err := pkg.AreFilesPotentiallyDuplicate(f1Path, f2Path)
 	require.NoError(t, err)
@@ -118,8 +105,8 @@ func TestAreFilesPotentiallyDuplicate_Images_PixelHashMismatch_DifferentDimensio
 // 2. TestAreFilesPotentiallyDuplicate_Images_PixelHashMismatch_DifferentSizes (Now different content)
 func TestAreFilesPotentiallyDuplicate_Images_PixelHashMismatch_DifferentContent(t *testing.T) {
 	dir := t.TempDir()
-	f1Path := createTempFile(t, dir, "file1.png", pngMinimal_1x1_Red)
-	f2Path := createTempFile(t, dir, "file2.png", pngMinimal_1x1_Blue) // Different color, same dimensions as f1 if 1x1 blue used
+	f1Path := createTempFile(t, dir, "file1.png", duplicates_pngMinimal_1x1_Red)
+	f2Path := createTempFile(t, dir, "file2.png", duplicates_pngMinimal_1x1_Blue) // Different color, same dimensions as f1 if 1x1 blue used
 
 	res, err := pkg.AreFilesPotentiallyDuplicate(f1Path, f2Path)
 	require.NoError(t, err)
@@ -196,7 +183,7 @@ func TestAreFilesPotentiallyDuplicate_HEIF_Different(t *testing.T) {
 	// Placeholder HEIC file and a standard JPG.
 	heicContent := []byte("minimal-heic-content")
 	heicPath := createTempFile(t, dir, "sample.heic", heicContent)
-	jpgPath := createTempFile(t, dir, "photoA1.jpg", pngMinimal_1x1_Red) // Using pngMinimal_1x1_Red as placeholder JPG content
+	jpgPath := createTempFile(t, dir, "photoA1.jpg", duplicates_pngMinimal_1x1_Red) // Using duplicates_pngMinimal_1x1_Red as placeholder JPG content
 
 	res, err := pkg.AreFilesPotentiallyDuplicate(heicPath, jpgPath)
 	require.NoError(t, err)
@@ -240,8 +227,8 @@ func TestAreFilesPotentiallyDuplicate_Images_ExifMismatch(t *testing.T) {
 	// Forcing this path is hard without mocks or specialized image files.
 	// Let's assume for now these simple PNGs don't have "conflicting" EXIF that would stop the process early.
 	// The refactored AreFilesPotentiallyDuplicate proceeds to pixel hash if EXIF is missing/inconclusive.
-	f1Path := createTempFile(t, dir, "exif1.png", pngForExif1) // 1x1 Red
-	f2Path := createTempFile(t, dir, "exif2.png", pngForExif2) // 1x1 Blue
+	f1Path := createTempFile(t, dir, "exif1.png", duplicates_pngForExif1) // 1x1 Red
+	f2Path := createTempFile(t, dir, "exif2.png", duplicates_pngForExif2) // 1x1 Blue
 
 	res, err := pkg.AreFilesPotentiallyDuplicate(f1Path, f2Path)
 	require.NoError(t, err)
@@ -302,7 +289,7 @@ func TestAreFilesPotentiallyDuplicate_NonImage_FileHashMismatch(t *testing.T) {
 // 8. TestAreFilesPotentiallyDuplicate_MixedTypes_SizeMismatch
 func TestAreFilesPotentiallyDuplicate_MixedTypes_SizeMismatch(t *testing.T) {
 	dir := t.TempDir()
-	f1Path := createTempFile(t, dir, "file1.png", pngMinimal_1x1_Red) // Small image
+	f1Path := createTempFile(t, dir, "file1.png", duplicates_pngMinimal_1x1_Red) // Small image
 	f2Path := createTempFile(t, dir, "file2.txt", []byte("much_larger_text_content_to_ensure_size_difference"))
 
 	res, err := pkg.AreFilesPotentiallyDuplicate(f1Path, f2Path)
@@ -315,7 +302,7 @@ func TestAreFilesPotentiallyDuplicate_MixedTypes_SizeMismatch(t *testing.T) {
 func TestAreFilesPotentiallyDuplicate_MixedTypes_SameSize_FileHashMismatch(t *testing.T) {
 	dir := t.TempDir()
 	// Create content with known same size but different data.
-	// pngMinimal_1x1_Red is small. Let's make text file of same size.
+	// duplicates_pngMinimal_1x1_Red is small. Let's make text file of same size.
 	// Note: This is tricky. Actual PNG encoding adds overhead.
 	// For simplicity, use text for both but give one an image extension.
 	// This tests the "mixed type, same size, different content" path.
