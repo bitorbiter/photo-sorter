@@ -64,7 +64,9 @@ func compareByExif(filePath1, filePath2 string) (match bool, conclusive bool, er
 // compareByPixelHash attempts to compare two image files using their pixel data hashes.
 // match: true if pixel hashes were successfully computed for both and they are identical.
 // conclusive: true if this comparison is enough to determine the outcome (e.g., pixel hashes match or mismatch).
-//             False if pixel hashing was not supported for one or both files.
+//
+//	False if pixel hashing was not supported for one or both files.
+//
 // attempted: true if pixel hashing was attempted.
 // err: any critical error encountered during pixel hashing (not ErrUnsupportedForPixelHashing).
 // hash1, hash2: the pixel hashes if obtained.

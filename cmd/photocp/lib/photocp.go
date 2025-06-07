@@ -335,6 +335,22 @@ func processImageFiles(imageFiles []string, targetBaseDir string, verbose bool, 
 	return
 }
 
+// generateFinalReport updates duplicate information and generates the text report.
+func generateFinalReport(reportFilePath string, duplicatesList []pkg.DuplicateInfo, copiedFilesCount int, processedFilesCount int, filesToCopyCount int, pixelHashUnsupportedCount int, keptFileSourceToTargetMap map[string]string, verbose bool) error {
+	// Update KeptFile paths in duplicates report
+	for i, dup := range duplicatesList {
+		if targetPath, ok := keptFileSourceToTargetMap[dup.KeptFile]; ok {
+			duplicatesList[i].KeptFile = targetPath
+		}
+	}
+
+	fmt.Println("\n--- Photo Sorting Process Completed ---")
+	// filesToCopyCount is essentially copiedFilesCount at this stage, as copying happens file-by-file.
+	// If a separate "selection" phase existed, filesToCopyCount might differ.
+	// For GenerateReport, it expects total files considered for copying, which is copiedFilesCount.
+	return pkg.GenerateReport(reportFilePath, duplicatesList, copiedFilesCount, processedFilesCount, copiedFilesCount, pixelHashUnsupportedCount)
+}
+
 // RunApplicationLogic is the core processing function for the photo sorter.
 // It scans the source directory, processes each image file, handles duplicates,
 // and copies files to the target directory, generating a report of its actions.
@@ -356,13 +372,19 @@ func RunApplicationLogic(sourceDir string, targetBaseDir string, verbose bool) (
 	}
 
 	processedFilesCount = len(imageFiles)
+	// Initialize duplicatesList to ensure it's not nil if no files are processed.
+	duplicatesList = []pkg.DuplicateInfo{}
 
 	if processedFilesCount == 0 {
 		fmt.Println("No image files found in source directory.")
-		if genErr := pkg.GenerateReport(reportFilePath, duplicatesList, 0, 0, 0, 0); genErr != nil {
-			return 0, 0, 0, nil, 0, fmt.Errorf("failed to generate final report: %w", genErr)
+		// Attempt to generate an empty report.
+		// Use existing (empty) duplicatesList, and 0 for counts.
+		// keptFileSourceToTargetMap would be empty/nil here.
+		err = generateFinalReport(reportFilePath, duplicatesList, 0, 0, 0, 0, make(map[string]string), verbose)
+		if err != nil {
+			return 0, 0, 0, duplicatesList, 0, fmt.Errorf("failed to generate empty report: %w", err)
 		}
-		return 0, 0, 0, nil, 0, nil
+		return 0, 0, 0, duplicatesList, 0, nil
 	}
 
 	fmt.Printf("Found %d image file(s) to process.\n", processedFilesCount)
@@ -382,85 +404,106 @@ func RunApplicationLogic(sourceDir string, targetBaseDir string, verbose bool) (
 	}
 
 	pixelHashUnsupportedCount = len(sourceFilesThatUsedFileHash)
+	filesToCopyCount = copiedFilesCount // As copying is done file-by-file
 
-	// Update KeptFile paths in duplicates report
-	for i, dup := range duplicatesList {
-		if targetPath, ok := keptFileSourceToTargetMap[dup.KeptFile]; ok {
-			duplicatesList[i].KeptFile = targetPath
-		}
+	err = generateFinalReport(reportFilePath, duplicatesList, copiedFilesCount, processedFilesCount, filesToCopyCount, pixelHashUnsupportedCount, keptFileSourceToTargetMap, verbose)
+	if err != nil {
+		// Return all collected information up to this point, plus the report generation error
+		return processedFilesCount, copiedFilesCount, filesToCopyCount, duplicatesList, pixelHashUnsupportedCount, fmt.Errorf("failed to generate final report: %w", err)
 	}
 
-	fmt.Println("\n--- Photo Sorting Process Completed ---")
-	filesToCopyCount = copiedFilesCount
-	if genErr := pkg.GenerateReport(reportFilePath, duplicatesList, copiedFilesCount, processedFilesCount, filesToCopyCount, pixelHashUnsupportedCount); genErr != nil {
-		return processedFilesCount, copiedFilesCount, filesToCopyCount, duplicatesList, pixelHashUnsupportedCount, fmt.Errorf("failed to generate final report: %w", genErr)
-	}
 	return processedFilesCount, copiedFilesCount, filesToCopyCount, duplicatesList, pixelHashUnsupportedCount, nil
 }
 
-// This is the main application entry point.
-func main() {
-	// --- Command-line flags ---
+// displayHelpInfo prints usage, options, and license information.
+func displayHelpInfo() {
+	fmt.Println("Usage: photocp -sourceDir <source_directory> -targetDir <target_directory> [-verbose]")
+	fmt.Println("\nOptions:")
+	flag.PrintDefaults() // Prints all defined flags, including -help
+	fmt.Println("\nLicense Information:")
+	fmt.Println("  This application is licensed under the BSD 2-Clause License.")
+	fmt.Println("  See the LICENSE file in the repository for the full license text.")
+	fmt.Println("\nDependency Information:")
+	fmt.Println("  This project relies on the following Go modules:")
+	fmt.Println("\n  Direct Dependencies:")
+	fmt.Println("  - goexif (github.com/rwcarlsen/goexif)")
+	fmt.Println("    - Purpose: Used to extract EXIF data from image files.")
+	fmt.Println("    - License: BSD 2-Clause \"Simplified\" License")
+	fmt.Println("    - Copyright: Copyright (c) 2012, Robert Carlsen & Contributors")
+	fmt.Println("  - heif-go (github.com/vegidio/heif-go)")
+	fmt.Println("    - Purpose: Used to decode HEIF/HEIC image files.")
+	fmt.Println("    - License: MIT License")
+	fmt.Println("    - Copyright: Copyright (c) Vinicius Egidio")
+	fmt.Println("\n  Indirect Dependencies:")
+	fmt.Println("    These libraries are included by direct dependencies or the testing framework.")
+	fmt.Println("  - go-spew (github.com/davecgh/go-spew)")
+	fmt.Println("    - License: ISC License (Copyright (c) 2012-2016 Dave Collins <dave@davec.name>)")
+	fmt.Println("  - go-difflib (github.com/pmezard/go-difflib)")
+	fmt.Println("    - License: BSD 3-Clause License (Copyright (c) 2013, Patrick Mezard)")
+	fmt.Println("  - testify (github.com/stretchr/testify)")
+	fmt.Println("    - License: MIT License (Copyright (c) 2012-2020 Mat Ryer, Tyler Bunnell and contributors)")
+	fmt.Println("  - yaml.v3 (gopkg.in/yaml.v3 - Source: github.com/go-yaml/yaml/tree/v3)")
+	fmt.Println("    - License: MIT License (Copyright (c) 2006-2010 Kirill Simonov) and ")
+	fmt.Println("               Apache License 2.0 (Copyright (c) 2011-2019 Canonical Ltd)")
+	fmt.Println("\n  Please refer to the respective repositories for full license texts.")
+}
+
+// parseAndValidateFlags defines, parses, and validates command-line flags.
+func parseAndValidateFlags() (sourceDir, targetBaseDir string, verbose bool, showHelp bool, err error) {
 	sourceDirFlag := flag.String("sourceDir", "", "Source directory containing photos to sort (e.g., common formats like JPG, PNG, GIF, HEIC, and various RAW types) (required)")
 	targetDirFlag := flag.String("targetDir", "", "Target directory to store sorted photos (required)")
 	verboseFlag := flag.Bool("verbose", false, "Enable verbose output for detailed processing information.")
 	helpFlg := flag.Bool("help", false, "Show help message and license information")
 	flag.Parse()
 
-	if *helpFlg {
-		fmt.Println("Usage: photocp -sourceDir <source_directory> -targetDir <target_directory> [-verbose]")
-		fmt.Println("\nOptions:")
-		flag.PrintDefaults() // Prints all defined flags, including -help
-		fmt.Println("\nLicense Information:")
-		fmt.Println("  This application is licensed under the BSD 2-Clause License.")
-		fmt.Println("  See the LICENSE file in the repository for the full license text.")
-		fmt.Println("\nDependency Information:")
-		fmt.Println("  This project relies on the following Go modules:")
-		fmt.Println("\n  Direct Dependencies:")
-		fmt.Println("  - goexif (github.com/rwcarlsen/goexif)")
-		fmt.Println("    - Purpose: Used to extract EXIF data from image files.")
-		fmt.Println("    - License: BSD 2-Clause \"Simplified\" License")
-		fmt.Println("    - Copyright: Copyright (c) 2012, Robert Carlsen & Contributors")
-		fmt.Println("  - heif-go (github.com/vegidio/heif-go)")
-		fmt.Println("    - Purpose: Used to decode HEIF/HEIC image files.")
-		fmt.Println("    - License: MIT License")
-		fmt.Println("    - Copyright: Copyright (c) Vinicius Egidio")
-		fmt.Println("\n  Indirect Dependencies:")
-		fmt.Println("    These libraries are included by direct dependencies or the testing framework.")
-		fmt.Println("  - go-spew (github.com/davecgh/go-spew)")
-		fmt.Println("    - License: ISC License (Copyright (c) 2012-2016 Dave Collins <dave@davec.name>)")
-		fmt.Println("  - go-difflib (github.com/pmezard/go-difflib)")
-		fmt.Println("    - License: BSD 3-Clause License (Copyright (c) 2013, Patrick Mezard)")
-		fmt.Println("  - testify (github.com/stretchr/testify)")
-		fmt.Println("    - License: MIT License (Copyright (c) 2012-2020 Mat Ryer, Tyler Bunnell and contributors)")
-		fmt.Println("  - yaml.v3 (gopkg.in/yaml.v3 - Source: github.com/go-yaml/yaml/tree/v3)")
-		fmt.Println("    - License: MIT License (Copyright (c) 2006-2010 Kirill Simonov) and ")
-		fmt.Println("               Apache License 2.0 (Copyright (c) 2011-2019 Canonical Ltd)")
-		fmt.Println("\n  Please refer to the respective repositories for full license texts.")
+	// Assign to return variables
+	sourceDir = *sourceDirFlag
+	targetBaseDir = *targetDirFlag
+	verbose = *verboseFlag
+	showHelp = *helpFlg
+
+	if showHelp {
+		return // Return immediately if help is requested
+	}
+
+	// Validate Flags
+	if sourceDir == "" {
+		err = fmt.Errorf("Error: -sourceDir flag is required")
+		return
+	}
+	if targetBaseDir == "" {
+		err = fmt.Errorf("Error: -targetDir flag is required")
+		return
+	}
+
+	var sourceInfo os.FileInfo
+	sourceInfo, err = os.Stat(sourceDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			err = fmt.Errorf("Error: Source directory '%s' does not exist", sourceDir)
+		} else {
+			err = fmt.Errorf("Error: Could not stat source directory '%s': %v", sourceDir, err)
+		}
+		return
+	}
+	if !sourceInfo.IsDir() {
+		err = fmt.Errorf("Error: Source path '%s' is not a directory", sourceDir)
+		return
+	}
+	return // All good
+}
+
+// This is the main application entry point.
+func main() {
+	sourceDir, targetBaseDir, verbose, showHelp, err := parseAndValidateFlags()
+
+	if showHelp {
+		displayHelpInfo()
 		os.Exit(0)
 	}
 
-	sourceDir := *sourceDirFlag
-	targetBaseDir := *targetDirFlag
-	verbose := *verboseFlag
-
-	// --- Validate Flags ---
-	if sourceDir == "" {
-		log.Fatal("Error: -sourceDir flag is required.")
-	}
-	if targetBaseDir == "" {
-		log.Fatal("Error: -targetDir flag is required.")
-	}
-
-	sourceInfo, err := os.Stat(sourceDir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			log.Fatalf("Error: Source directory '%s' does not exist.", sourceDir)
-		}
-		log.Fatalf("Error: Could not stat source directory '%s': %v", sourceDir, err)
-	}
-	if !sourceInfo.IsDir() {
-		log.Fatalf("Error: Source path '%s' is not a directory.", sourceDir)
+		log.Fatal(err)
 	}
 
 	// Call the extracted application logic
