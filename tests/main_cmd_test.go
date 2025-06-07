@@ -136,7 +136,7 @@ func TestRunApplicationLogic_SourceToEmptyTarget_DirectCopy(t *testing.T) {
 	}
 	createTestFiles(t, sourceDir, sourceFiles)
 
-	processed, copied, filesToCopy, duplicates, unsupported, err := photocp.RunApplicationLogic(sourceDir, targetDir, false) // Added verbose=false
+	processed, copied, filesToCopy, duplicates, unsupported, err := photocp.RunApplicationLogic(sourceDir, targetDir, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, processed, "Should have processed 1 file")
@@ -173,7 +173,7 @@ func TestRunApplicationLogic_SourceHasTwoIdenticalFiles_TargetEmpty(t *testing.T
 	fullSourceFile1Path := filepath.Join(sourceDir, sourceFile1Path)
 	fullSourceFile2Path := filepath.Join(sourceDir, sourceFile2Path)
 
-	processed, copied, filesToCopy, duplicates, _, err := photocp.RunApplicationLogic(sourceDir, targetDir, false) // Added verbose=false
+	processed, copied, filesToCopy, duplicates, _, err := photocp.RunApplicationLogic(sourceDir, targetDir, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, 2, processed, "Should have processed 2 files")
@@ -251,7 +251,7 @@ func TestRunApplicationLogic_TargetExists_SourceDifferentContent_TargetPreserved
 	createTestFiles(t, sourceDir, sourceFiles)
 	fullSourceFilePath := filepath.Join(sourceDir, sourceFiles[0].Path)
 
-	processed, copied, filesToCopy, duplicates, _, err := photocp.RunApplicationLogic(sourceDir, targetDir, false) // Added verbose=false
+	processed, copied, filesToCopy, duplicates, _, err := photocp.RunApplicationLogic(sourceDir, targetDir, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, processed, "Should have processed 1 file")
@@ -300,7 +300,7 @@ func TestRunApplicationLogic_TargetExists_SourceDifferentContent_TargetPreserved
 	createTestFiles(t, sourceDir, sourceFiles)
 	fullSourceFilePath := filepath.Join(sourceDir, sourceFiles[0].Path)
 
-	processed, copied, filesToCopy, duplicates, _, err := photocp.RunApplicationLogic(sourceDir, targetDir, false) // Added verbose=false
+	processed, copied, filesToCopy, duplicates, _, err := photocp.RunApplicationLogic(sourceDir, targetDir, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, processed, "Should have processed 1 file")
@@ -346,7 +346,7 @@ func TestRunApplicationLogic_TargetExists_SourceDifferentFileSameName(t *testing
 	createTestFiles(t, sourceDir, sourceFiles)
 	fullSourceFilePath := filepath.Join(sourceDir, sourceFiles[0].Path)
 
-	processed, copied, filesToCopy, duplicates, _, err := photocp.RunApplicationLogic(sourceDir, targetDir, false) // Added verbose=false
+	processed, copied, filesToCopy, duplicates, _, err := photocp.RunApplicationLogic(sourceDir, targetDir, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, processed, "Should have processed 1 file")
@@ -398,7 +398,7 @@ func TestRunApplicationLogic_PixelHashUnsupported_FallbackToFileHash(t *testing.
 	createTestFiles(t, sourceDir, sourceFilesS2Spec)
 	sourceFilePathS2 := filepath.Join(sourceDir, sourceFilesS2Spec[0].Path)
 
-	processed, copied, filesToCopy, duplicates, unsupported, err := photocp.RunApplicationLogic(sourceDir, targetDir, false) // Added verbose=false
+	processed, copied, filesToCopy, duplicates, unsupported, err := photocp.RunApplicationLogic(sourceDir, targetDir, false)
 	require.NoError(t, err)
 
 	// S1.png (source) vs T1.png (target at exactTargetPath) -> FileHashMatch, S1 discarded.
@@ -464,7 +464,7 @@ func TestRunApplicationLogic_SourceConflictsWithIdenticalTarget_MarkedDuplicate(
 	createTestFiles(t, sourceDir, sourceFiles)
 	fullSourceFilePath := filepath.Join(sourceDir, sourceFiles[0].Path)
 
-	processed, copied, filesToCopy, duplicates, unsupported, err := photocp.RunApplicationLogic(sourceDir, targetDir, false) // Added verbose=false
+	processed, copied, filesToCopy, duplicates, unsupported, err := photocp.RunApplicationLogic(sourceDir, targetDir, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, 1, processed, "Should have processed 1 file")
@@ -520,7 +520,7 @@ func TestRunApplicationLogic_SequentialSourceToSameTarget(t *testing.T) {
 	// Expected target path for S1 (and where S2, S3 will also initially map)
 	expectedTargetForS1 := filepath.Join(targetDir, "2024", "03", "2024-03-10-090000.png")
 
-	processed, copied, filesToCopy, duplicates, unsupported, err := photocp.RunApplicationLogic(sourceDir, targetDir, false) // Added verbose=false
+	processed, copied, filesToCopy, duplicates, unsupported, err := photocp.RunApplicationLogic(sourceDir, targetDir, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, 3, processed, "Should process 3 source files")
@@ -554,16 +554,6 @@ func TestRunApplicationLogic_SequentialSourceToSameTarget(t *testing.T) {
 	targetMonthDir := filepath.Join(targetDir, "2024", "03")
 	dirEntries, _ := os.ReadDir(targetMonthDir)
 	assert.Len(t, dirEntries, 1, "Only S1's copy should be in the target directory")
-
-	// Log all files to help debug if needed (optional, can be removed)
-	// filepath.Walk(targetDir, func(path string, info os.FileInfo, err error) error {
-	// 	if err != nil { return err }
-	// 	t.Logf("Found in target: %s (dir: %t)", path, info.IsDir()); return nil
-	// })
-	// filepath.Walk(sourceDir, func(path string, info os.FileInfo, err error) error {
-	// 	if err != nil { return err }
-	// 	t.Logf("Found in source: %s (dir: %t)", path, info.IsDir()); return nil
-	// })
 }
 
 // TODO: Add more tests:
@@ -593,7 +583,7 @@ func TestRunApplicationLogic_HEICSupport(t *testing.T) {
 	}
 	createTestFiles(t, sourceDir, sourceFiles)
 
-	processed, copied, filesToCopy, duplicates, pixelHashUnsupported, err := photocp.RunApplicationLogic(sourceDir, targetDir, false) // Added verbose=false
+	processed, copied, filesToCopy, duplicates, pixelHashUnsupported, err := photocp.RunApplicationLogic(sourceDir, targetDir, false)
 	require.NoError(t, err, "runApplicationLogic should not error for HEIC file")
 
 	assert.Equal(t, 1, processed, "Should have processed 1 HEIC file")

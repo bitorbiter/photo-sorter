@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"log"
-	// "errors" // No longer directly used in main after refactor
 	"os"
 	"path/filepath"
 	"time" // time.Time is used for photoDate variable type and other time operations
@@ -16,9 +15,6 @@ import (
 
 	"github.com/user/photo-sorter/pkg"
 )
-
-// DuplicateInfo is defined in the pkg package (specifically in pkg/reporter.go).
-// main.go will use pkg.DuplicateInfo.
 
 // scanSourceDirectory scans the source directory for image files.
 func scanSourceDirectory(sourceDir string, verbose bool) ([]string, error) {
